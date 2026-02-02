@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   # 定期実行 (UTC 05:55 = JST 14:25)
   schedule:
-    - cron: '25 05 * * *'
+    - cron: '27 05 * * *'
 
 permissions:
   actions: write
