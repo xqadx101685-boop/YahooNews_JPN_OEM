@@ -1,10 +1,9 @@
 name: Yahoo News Scraper and Gemini Analyzer
 
 on:
-  workflow_dispatch:
-  # 定期実行 (UTC 05:55 = JST 14:25)
+  workflow_dispatch: # 手動実行
   schedule:
-    - cron: '27 05 * * *'
+    - cron: '48 02 * * *' # 定期実行 (JST 11:48)
 
 permissions:
   actions: write
@@ -19,26 +18,40 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # 【修正】 --repo ${{ github.repository }} を追加しました
-          # これにより Checkout 前でもリポジトリを特定できます
           RUNNING_WORKFLOWS=$(gh run list --repo ${{ github.repository }} --workflow "${{ github.workflow }}" --status in_progress --json databaseId --jq '.[].databaseId')
-          
           CURRENT_ID=${{ github.run_id }}
-          
           for id in $RUNNING_WORKFLOWS; do
             if [ "$id" != "$CURRENT_ID" ]; then
-              echo "Already running (Run ID: $id). Cancelling this run."
-              
-              # 【修正】ここにも --repo オプションを追加念のためつけておきます
+              echo "Already running. Cancelling this run."
               gh run cancel $CURRENT_ID --repo ${{ github.repository }}
-              
               sleep 60
             fi
           done
-          echo "No other running workflows found. Proceeding..."
 
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # --- 修正ポイント：スケジュール実行の時だけ待機する ---
+      - name: Wait until target time (JST 14:30) if scheduled
+        if: github.event_name == 'schedule'
+        run: |
+          TARGET="05:30"
+          echo "Scheduled run detected. Current time: $(date '+%H:%M') UTC"
+          echo "Waiting until $TARGET UTC (JST 14:30)..."
+          
+          while true; do
+            CURRENT=$(date '+%H:%M')
+            if [[ "$CURRENT" > "$TARGET" || "$CURRENT" == "$TARGET" ]]; then
+              echo "Reached target time. Starting..."
+              break
+            fi
+            sleep 60
+          done
+
+      - name: Skip wait if manual
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "Manual run detected. Skipping wait step."
+      # ------------------------------------------------
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -60,7 +73,5 @@ jobs:
           GOOGLE_API_KEY_4: ${{ secrets.GOOGLE_API_KEY_4 }}
           GOOGLE_API_KEY_5: ${{ secrets.GOOGLE_API_KEY_5 }}
           SPREADSHEET_KEY: ${{ secrets.SPREADSHEET_KEY }}
-
           PYTHONUNBUFFERED: '1'
-
         run: python main.py
