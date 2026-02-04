@@ -3,7 +3,7 @@ name: Yahoo News Scraper and Gemini Analyzer
 on:
   workflow_dispatch: # 手動実行
   schedule:
-    - cron: '38 02 * * *' # 定期実行 (JST 11:48)
+    - cron: '18 02 * * *' # 定期実行 (JST 11:18)
 
 permissions:
   actions: write
