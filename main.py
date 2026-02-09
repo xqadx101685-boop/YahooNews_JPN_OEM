@@ -132,7 +132,8 @@ def parse_post_date(raw, today_jst: datetime) -> Optional[datetime]:
     if raw is None: return None
     if isinstance(raw, str):
         s = raw.strip()
-        s = re.sub(r"\([月火水木金土日]\)$", "", s).strip()
+        # 修正箇所：末尾限定の $ を外し、文字列の途中にある (曜日) も削除可能に
+        s = re.sub(r"\([月火水木金土日]\)", "", s).strip()
         s = s.replace('配信', '').strip()
         for fmt in ("%Y/%m/%d %H:%M:%S", "%y/%m/%d %H:%M", "%m/%d %H:%M", "%Y/%m/%d %H:%M"):
             try:
@@ -586,7 +587,9 @@ def sort_yahoo_sheet(gc: gspread.Client):
     try:
         reqs = []
         for d in "月火水木金土日":
+            # 修正箇所：ここでも (曜日) をどこにあっても削除するように指定
             reqs.append({"findReplace": {"range": {"sheetId": worksheet.id, "startRowIndex": 1, "endRowIndex": MAX_SHEET_ROWS_FOR_REPLACE, "startColumnIndex": 2, "endColumnIndex": 3}, "find": rf"\({d}\)", "replacement": "", "searchByRegex": True}})
+        
         reqs.append({"findReplace": {"range": {"sheetId": worksheet.id, "startRowIndex": 1, "endRowIndex": MAX_SHEET_ROWS_FOR_REPLACE, "startColumnIndex": 2, "endColumnIndex": 3}, "find": r"\s{2,}", "replacement": " ", "searchByRegex": True}})
         reqs.append({"findReplace": {"range": {"sheetId": worksheet.id, "startRowIndex": 1, "endRowIndex": MAX_SHEET_ROWS_FOR_REPLACE, "startColumnIndex": 2, "endColumnIndex": 3}, "find": r"^\s+|\s+$", "replacement": "", "searchByRegex": True}})
         reqs.append({"repeatCell": {"range": {"sheetId": worksheet.id, "startRowIndex": 1, "endRowIndex": last_row, "startColumnIndex": 2, "endColumnIndex": 3}, "cell": {"userEnteredFormat": {"numberFormat": {"type": "DATE_TIME", "pattern": "yyyy/mm/dd hh:mm:ss"}}}, "fields": "userEnteredFormat.numberFormat"}})
@@ -594,7 +597,6 @@ def sort_yahoo_sheet(gc: gspread.Client):
         time.sleep(2)
     except Exception as e: print(f"整形エラー: {e}")
     try:
-        # ソート範囲を安全のためにZ列まで広げておく
         worksheet.sort((3, 'des'), range=f'A2:Z{last_row}')
         print(" ソート完了")
     except Exception as e: print(f"ソートエラー: {e}")
