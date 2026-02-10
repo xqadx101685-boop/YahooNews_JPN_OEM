@@ -1,9 +1,7 @@
 name: Yahoo News Scraper and Gemini Analyzer
 
 on:
-  workflow_dispatch: # 手動実行
-  schedule:
-    - cron: '47 01 * * *' # 定期実行 (JST 10:47)
+  workflow_dispatch: # GAS（API）からの起動、および手動実行用
 
 permissions:
   actions: write
@@ -14,63 +12,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. 実行中のジョブがあるか確認（あれば自分をキャンセル）
-      - name: Check for running workflow
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          RUNNING_WORKFLOWS=$(gh run list --repo ${{ github.repository }} --workflow "${{ github.workflow }}" --status in_progress --json databaseId --jq '.[].databaseId')
-          CURRENT_ID=${{ github.run_id }}
-          for id in $RUNNING_WORKFLOWS; do
-            if [ "$id" != "$CURRENT_ID" ]; then
-              echo "Already running. Cancelling this run to avoid duplication."
-              gh run cancel $CURRENT_ID --repo ${{ github.repository }}
-              sleep 60
-            fi
-          done
-
-      # 2. 今日すでに成功した実行があるか確認（あれば終了）
-      - name: Check if already succeeded today
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # JSTの日付を取得
-          TODAY=$(date -d '9 hours' +%Y-%m-%d)
-          echo "Checking for successful runs on $TODAY..."
-
-          # 今日の日付で、成功(success)した履歴があるか検索
-          SUCCESSFUL_RUN=$(gh run list --repo ${{ github.repository }} --workflow "${{ github.workflow }}" --status success --json createdAt,databaseId --jq ".[] | select(.createdAt | contains(\"$TODAY\")) | .databaseId" | head -n 1)
-
-          if [ -n "$SUCCESSFUL_RUN" ]; then
-            echo "A successful run was already found for today (ID: $SUCCESSFUL_RUN). Skipping this run."
-            # 以降のステップを実行させないために、このジョブをここで終了させる
-            # exit 0 なのでエラーにはなりません
-            exit 0
-          else
-            echo "No successful runs found today. Proceeding..."
-          fi
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 3. スケジュール実行の時だけ14:30まで待機
-      - name: Wait until target time (JST 14:30) if scheduled
-        if: github.event_name == 'schedule'
+      # 14:30 (JST) まで待機するステップ
+      - name: Wait until target time (JST 14:30)
         run: |
           TARGET="05:30"
-          echo "Scheduled run detected. Waiting until $TARGET UTC (JST 14:30)..."
+          echo "Current time is $(date '+%H:%M') UTC."
+          echo "Waiting until $TARGET UTC (JST 14:30)..."
+          
           while true; do
             CURRENT=$(date '+%H:%M')
             if [[ "$CURRENT" > "$TARGET" || "$CURRENT" == "$TARGET" ]]; then
-              echo "Reached target time. Starting..."
+              echo "Reached target time ($CURRENT). Starting..."
               break
             fi
+            # 1分ごとにチェック
             sleep 60
           done
-
-      - name: Skip wait if manual
-        if: github.event_name == 'workflow_dispatch'
-        run: echo "Manual run detected. Skipping wait step."
 
       - name: Set up Python
         uses: actions/setup-python@v5
