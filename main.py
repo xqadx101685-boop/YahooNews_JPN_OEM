@@ -313,7 +313,7 @@ def analyze_article_batch(texts: List[str]) -> Optional[List[Dict[str, str]]]:
 
     combined_text = ""
     for i, txt in enumerate(texts):
-        combined_text += f"\n【記事 {i+1}】\n{txt[:3000]}\n"
+        combined_text += f"\n【記事 {i+1}】\n{txt[:5000]}\n"
     
     prompt = prompt_template.replace("{TEXT_TO_ANALYZE}", combined_text)
     prompt += f"\n\n※上記の{len(texts)}つの記事それぞれについて分析し、必ず{len(texts)}個のオブジェクトを含むJSONリスト形式で出力してください。"
@@ -347,7 +347,7 @@ def analyze_article_single(text: str) -> Dict[str, str]:
     prompt_template = load_merged_prompt()
     if not prompt_template: return default
 
-    prompt = prompt_template.replace("{TEXT_TO_ANALYZE}", text[:15000])
+    prompt = prompt_template.replace("{TEXT_TO_ANALYZE}", text[:25000])
     
     schema = {
         "type": "object",
