@@ -16,16 +16,14 @@ from selenium.webdriver.common.by import By
 # --- 設定・クラス名定義 ---
 COMMENTS_SHEET_NAME = "Comments"
 REQ_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"}
-MAX_SELENIUM_PAGES = 10  # Seleniumで取得するページ数上限
+MAX_SELENIUM_PAGES = 10 
 
-# YahooニュースのHTML構造（クラス名）
-CLS_ARTICLE = "sc-169yn8p-3" # コメント枠
-CLS_USER_NAME = "sc-169yn8p-7" # 投稿者名
-CLS_BODY = "sc-169yn8p-10"    # 本文
-CLS_TIME = "sc-169yn8p-9"     # 日時
+CLS_ARTICLE = "sc-169yn8p-3" 
+CLS_USER_NAME = "sc-169yn8p-7" 
+CLS_BODY = "sc-169yn8p-10"    
+CLS_TIME = "sc-169yn8p-9"     
 
 def ensure_comments_sheet(sh: gspread.Spreadsheet):
-    """ Commentsシートがなければ作成し、ヘッダーを設定する """
     try:
         ws = sh.worksheet(COMMENTS_SHEET_NAME)
     except gspread.exceptions.WorksheetNotFound:
@@ -40,7 +38,6 @@ def ensure_comments_sheet(sh: gspread.Spreadsheet):
     return ws
 
 def setup_driver():
-    """ Seleniumドライバの初期化 """
     options = Options()
     options.add_argument("--headless=new")
     options.add_argument("--disable-gpu")
@@ -58,7 +55,6 @@ def setup_driver():
         return None
 
 def extract_comments_from_soup(soup, seen_comments):
-    """ BeautifulSoupから特定のクラスを指定してコメントを抽出する共通ロジック """
     extracted_data = []
     articles = soup.find_all('article', class_=CLS_ARTICLE)
     ignore_words = ["このコメントを削除しますか", "コメントを削除しました", "違反報告する", "非表示・報告", "投稿を受け付けました"]
@@ -80,17 +76,14 @@ def extract_comments_from_soup(soup, seen_comments):
     return extracted_data
 
 def fetch_comments_hybrid(article_url: str, max_limit: int) -> tuple[list[str], str]:
-    """ ハイブリッド方式でコメントを取得（取得上限指定版） """
     base_url = article_url.split('?')[0]
     if not base_url.endswith('/comments'):
         base_url = base_url.split('/comments')[0] + '/comments' if '/comments' in base_url else f"{base_url}/comments"
 
     all_comments_data = [] 
     seen_comments = set()
-    
     print(f"    - コメント取得開始 (上限:{max_limit}件): {base_url}")
 
-    # --- Phase 1: Selenium ---
     driver = setup_driver()
     if driver:
         for page in range(1, MAX_SELENIUM_PAGES + 1):
@@ -98,13 +91,11 @@ def fetch_comments_hybrid(article_url: str, max_limit: int) -> tuple[list[str], 
             try:
                 driver.get(f"{base_url}?page={page}")
                 WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, CLS_ARTICLE)))
-                
                 expand_buttons = driver.find_elements(By.XPATH, "//*[contains(text(), 'もっと見る') or contains(text(), '続きを読む')]")
                 for btn in expand_buttons:
                     try:
                         if btn.is_displayed(): driver.execute_script("arguments[0].click();", btn)
                     except: pass
-                
                 time.sleep(0.5)
                 soup = BeautifulSoup(driver.page_source, 'html.parser')
                 new_data = extract_comments_from_soup(soup, seen_comments)
@@ -113,10 +104,8 @@ def fetch_comments_hybrid(article_url: str, max_limit: int) -> tuple[list[str], 
             except Exception: break
         driver.quit()
 
-    # AI分析用テキスト（Selenium取得分のみ、または上限まで）
-    ai_target_text = "\n".join(all_comments_data[:100])
+    ai_target_text = "\n".join(all_comments_data[:100]) # 要約は上位100件
     
-    # --- Phase 2: Requests (不足分を補充) ---
     page = (len(all_comments_data) // 10) + 1
     while len(all_comments_data) < max_limit:
         try:
@@ -131,7 +120,6 @@ def fetch_comments_hybrid(article_url: str, max_limit: int) -> tuple[list[str], 
             time.sleep(0.5)
         except: break
 
-    # 上限でカット
     final_comments = all_comments_data[:max_limit]
     merged_columns = ["\n\n".join(final_comments[i:i+10]) for i in range(0, len(final_comments), 10)]
     print(f"    - 取得完了: {len(final_comments)}件")
@@ -146,7 +134,7 @@ def set_row_height(ws, pixels):
     except: pass
 
 def run_comment_collection(gc: gspread.Client, source_sheet_id: str, source_sheet_name: str, summarizer_func):
-    print("\n=====   ステップ⑤ コメント収集・要約・保存 =====")
+    print("\n=====   ステップ⑤ コメント収集・要約・保存 (分割書き込み版) =====")
     sh = gc.open_by_key(source_sheet_id)
     try: source_ws = sh.worksheet(source_sheet_name)
     except: return
@@ -164,7 +152,6 @@ def run_comment_collection(gc: gspread.Client, source_sheet_id: str, source_shee
         try: cnt = int(re.sub(r'\D', '', str(row[5])))
         except: cnt = 0
         target_data.append({"count": cnt, "data": row})
-    
     target_data.sort(key=lambda x: x['count'], reverse=True)
 
     process_count = 0
@@ -172,33 +159,20 @@ def run_comment_collection(gc: gspread.Client, source_sheet_id: str, source_shee
         row = item['data']
         url, title, post_date, source, comment_count_str = row[0], row[1], row[2], row[3], row[5]
         target_company, category, nissan_neg_text = row[6], row[7], row[10]
-
         if url in existing_urls: continue
 
         # --- 条件判定と取得上限の設定 ---
         is_target = False
-        max_limit = 2000  # デフォルトの上限（日産などの500エラー対策）
-
+        max_limit = 2000 
         if not category.startswith("その他") and item['count'] > 0:
-            # 日産：100件以上
             if target_company.startswith("日産") and item['count'] >= 100:
-                is_target = True
-                max_limit = 1500 # 日産は多めに1500件
-            
-            # トヨタ：200件以上
+                is_target, max_limit = True, 1500
             elif target_company.startswith("トヨタ") and item['count'] >= 200:
-                is_target = True
-                max_limit = 200 # トヨタ・ホンダは200件に制限
-                
-            # ホンダ：200件以上
+                is_target, max_limit = True, 200
             elif target_company.startswith("ホンダ") and item['count'] >= 200:
-                is_target = True
-                max_limit = 200 # トヨタ・ホンダは200件に制限
-                
-            # ネガ文あり（日産以外も含む）
+                is_target, max_limit = True, 200
             elif str(nissan_neg_text).strip() not in ["", "なし", "N/A", "-"]:
-                is_target = True
-                max_limit = 1500
+                is_target, max_limit = True, 1500
         
         if is_target:
             print(f"  - 対象記事発見: {title[:25]}...")
@@ -210,19 +184,32 @@ def run_comment_collection(gc: gspread.Client, source_sheet_id: str, source_shee
                 summary_combined = "\n\n".join(summary_data.get("summaries", [])) or "-"
                 ranking_combined = "\n".join(summary_data.get("topic_ranking", [])) or "-"
 
-                row_data = [url, title, post_date, source, comment_count_str, prod_neg, summary_combined, ranking_combined] + comment_cols
+                # 基本データ (A-H列)
+                base_data = [url, title, post_date, source, comment_count_str, prod_neg, summary_combined, ranking_combined]
                 
-                # スプレッドシートへの書き込み（エラー対策）
-                try:
-                    dest_ws.append_rows([row_data], value_input_option='USER_ENTERED')
-                except Exception as e:
-                    print(f"      ! 書き込みエラー(データ過大の可能性): {e}")
-                    # 失敗した場合はRAW形式で再試行
-                    try: dest_ws.append_rows([row_data], value_input_option='RAW')
-                    except: print("      !! 再試行も失敗しました。")
+                # コメント列を50列(500件相当)ずつに分割
+                chunk_size = 50
+                comment_chunks = [comment_cols[i:i + chunk_size] for i in range(0, len(comment_cols), chunk_size)]
+
+                # 1. 新規行作成（基本データ + 最初のチャンク）
+                first_row_data = base_data + (comment_chunks[0] if len(comment_chunks) > 0 else [])
+                dest_ws.append_rows([first_row_data], value_input_option='USER_ENTERED')
+                
+                # 2. 今書き込んだ行の番号を特定
+                current_row_idx = len(dest_ws.col_values(1)) 
+
+                # 3. 残りのチャンクがあれば横方向にupdateしていく
+                if len(comment_chunks) > 1:
+                    print(f"    > 残りのコメント({len(comment_cols)}件)を分割書き込み中...")
+                    for j, chunk in enumerate(comment_chunks[1:]):
+                        # 書き込み開始列の計算 (9列目から始まり、前のチャンク分を飛ばす)
+                        start_col = 9 + (j + 1) * chunk_size
+                        # update(range_name='R1C1' 形式)
+                        dest_ws.update([chunk], f"R{current_row_idx}C{start_col}", value_input_option='USER_ENTERED')
+                        time.sleep(1)
 
                 process_count += 1
-                time.sleep(60) # Gemini制限回避用
+                time.sleep(60)
 
     if process_count > 0:
         try:
@@ -230,5 +217,4 @@ def run_comment_collection(gc: gspread.Client, source_sheet_id: str, source_shee
             if last_row > 1: dest_ws.sort((3, 'des'), range=f'A2:KN{last_row}') 
         except: pass
         set_row_height(dest_ws, 21)
-
     print(f"   コメント収集完了: {process_count} 件処理しました。")
