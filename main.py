@@ -351,13 +351,13 @@ def analyze_article_single(text: str) -> Dict[str, str]:
     prompt_template = load_merged_prompt()
     if not prompt_template: return default
 
-        if len(txt) > 4000:
-            trimmed_txt = txt[:2500] + "\n...[中略]...\n" + txt[-1500:]
-        else:
-            trimmed_txt = txt
-    
-    prompt = prompt_template.replace("{TEXT_TO_ANALYZE}", trimmed_text)
+    if len(text) > 4000:
+        trimmed_text = text[:2500] + "\n...[中略]...\n" + text[-1500:]
+    else:
+        trimmed_text = text
 
+    prompt = prompt_template.replace("{TEXT_TO_ANALYZE}", trimmed_text)
+    
     schema = {
         "type": "object",
         "properties": {
