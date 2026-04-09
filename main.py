@@ -355,7 +355,8 @@ def analyze_article_single(text: str) -> Dict[str, str]:
             trimmed_txt = txt[:2500] + "\n...[中略]...\n" + txt[-1500:]
         else:
             trimmed_txt = txt
-        combined_text += f"\n【記事 {i+1}】\n{trimmed_txt}\n"
+    
+    prompt = prompt_template.replace("{TEXT_TO_ANALYZE}", trimmed_text)
 
     schema = {
         "type": "object",
