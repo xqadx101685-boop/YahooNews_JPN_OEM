@@ -82,7 +82,7 @@ else:
 CURRENT_KEY_INDEX = 0
 REQUEST_COUNT_PER_KEY = 0
 MAX_REQUESTS_BEFORE_ROTATE = 20 # 20回でローテーション
-NORMAL_WAIT_SECONDS = 12        # RPM制限対策 (12秒以上待機)
+NORMAL_WAIT_SECONDS = 20        # RPM制限対策 (20秒以上待機)
 
 GEMINI_PROMPT_TEMPLATE = None
 COMMENT_PROMPT_TEMPLATE = None
@@ -624,7 +624,7 @@ def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
         print("  - 新規分析対象はありません。")
         return
 
-    BATCH_SIZE = 5
+    BATCH_SIZE = 4
     for i in range(0, len(target_tasks), BATCH_SIZE):
         batch = target_tasks[i : i + BATCH_SIZE]
         texts = [t["body"] for t in batch]
