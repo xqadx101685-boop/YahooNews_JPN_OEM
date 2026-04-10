@@ -98,6 +98,7 @@ def get_current_gemini_client() -> Optional[genai.Client]:
         api_key=api_key, 
         http_options={'timeout': 6000000}
     )
+
 def rotate_api_key(reason="limit_reached"):
     """ APIキーを次のものに切り替える """
     global CURRENT_KEY_INDEX, REQUEST_COUNT_PER_KEY
@@ -132,7 +133,6 @@ def parse_post_date(raw, today_jst: datetime) -> Optional[datetime]:
     if raw is None: return None
     if isinstance(raw, str):
         s = raw.strip()
-        # 修正箇所：末尾限定の $ を外し、文字列の途中にある (曜日) も削除可能に
         s = re.sub(r"\([月火水木金土日]\)", "", s).strip()
         s = s.replace('配信', '').strip()
         for fmt in ("%Y/%m/%d %H:%M:%S", "%y/%m/%d %H:%M", "%m/%d %H:%M", "%Y/%m/%d %H:%M"):
@@ -165,13 +165,11 @@ def load_keywords(filename: str) -> List[str]:
     except Exception: return []
 
 def load_merged_prompt() -> str:
-    """ 記事分析用のプロンプト読み込み (comment_analysis以外) """
     global GEMINI_PROMPT_TEMPLATE
     if GEMINI_PROMPT_TEMPLATE: return GEMINI_PROMPT_TEMPLATE
     combined = []
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        # 最後の一つ(prompt_comment_analysis.txt)は除外して結合
         for fname in ALL_PROMPT_FILES[:-1]:
             with open(os.path.join(script_dir, fname), 'r', encoding='utf-8') as f:
                 combined.append(f.read().strip())
@@ -187,7 +185,6 @@ def load_merged_prompt() -> str:
         return ""
 
 def load_comment_prompt() -> str:
-    """ コメント分析用のプロンプト読み込み """
     global COMMENT_PROMPT_TEMPLATE
     if COMMENT_PROMPT_TEMPLATE: return COMMENT_PROMPT_TEMPLATE
     try:
@@ -233,19 +230,13 @@ def update_sheet_with_retry(ws, range_name, values, max_retries=3):
             time.sleep(30 * (attempt + 1))
     print(f"  !! 更新失敗: {range_name}")
 
-# ====== Gemini 共通呼び出し関数 (修正版) ======
+# ====== Gemini 共通呼び出し関数 ======
 def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) -> Any:
-    """ API呼び出しの共通処理（ローテーション、リトライ含む） """
-    
     increment_request_count()
-    
     client = get_current_gemini_client()
     if not client: return None
 
-    # サーバー混雑時はリトライしたいので、回数を少し多めにしておくと安心です
     MAX_RETRIES = 5 
-    
-    # 無料枠用のセーフティ設定
     safety_settings_free = [
         types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_ONLY_HIGH"),
         types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_ONLY_HIGH"),
@@ -256,14 +247,13 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
     for attempt in range(MAX_RETRIES):
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash', # または 'gemini-2.0-flash-exp'
+                model='gemini-2.5-flash', # 最新モデル名に修正
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=schema,
                     safety_settings=safety_settings_free
                 ),
-                # クライアント側で一括設定したため、個別の timeout=... は不要です
             )
             return json.loads(response.text.strip())
 
@@ -271,38 +261,26 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
             print("    !! 429 Error (Quota Exceeded). Rotating key...")
             rotate_api_key(reason="429_error")
             client = get_current_gemini_client()
-            time.sleep(5) # ローテーション後も一息おく
+            time.sleep(5)
             continue
         
         except Exception as e:
             err_msg = str(e)
-
-            # 1. 無料枠のセーフティ設定ミス（これはリトライしても直らないので終了）
             if "restricted HarmBlockThreshold" in err_msg:
-                print("    !! Config Error: BLOCK_NONE is not allowed on Free Tier.")
                 return None
-
-            # 2. リソース不足 (429) -> キーを替えてリトライ
             if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
-                print("    !! 429 Error detected. Rotating key...")
                 rotate_api_key(reason="429_in_msg")
                 client = get_current_gemini_client()
                 time.sleep(10)
                 continue
-            
-            # 3. 【追加】サーバー混雑 (503 Overloaded) -> 少し待ってリトライ
             if "503" in err_msg or "overloaded" in err_msg or "UNAVAILABLE" in err_msg:
-                wait_sec = 30 * (attempt + 1) # 回数ごとに待ち時間を増やす (20秒, 40秒...)
+                wait_sec = 30 * (attempt + 1)
                 print(f"    !! Server Overloaded (503). Retrying in {wait_sec}s... ({attempt+1}/{MAX_RETRIES})")
                 time.sleep(wait_sec)
-                # continueすることで、forループの最初に戻り再実行される
                 continue
-
-            # その他の不明なエラーはログを出して終了
             print(f"    ! API Error: {e}")
             return None 
 
-    print("    !! Max retries reached. Giving up.")
     return None
 
 # ====== 記事分析用関数 ======
@@ -351,6 +329,7 @@ def analyze_article_single(text: str) -> Dict[str, str]:
     prompt_template = load_merged_prompt()
     if not prompt_template: return default
 
+    # 単体実行時の文字数カット (バグ修正済み)
     if len(text) > 4000:
         trimmed_text = text[:2500] + "\n...[中略]...\n" + text[-1500:]
     else:
@@ -400,7 +379,7 @@ def analyze_comment_summary(text: str) -> Dict[str, Any]:
         "properties": {
             "nissan_product_neg": {"type": "string"},
             "summaries": {"type": "array", "items": {"type": "string"}},
-            "topic_ranking": {"type": "array", "items": {"type": "string"}}
+            "topic_ranking": {"type": "array", "items": {"type": "string"} }
         }
     }
     
@@ -425,31 +404,19 @@ def get_yahoo_news_with_selenium(keyword: str) -> list[dict]:
     except: pass
     time.sleep(3)
 
-# 設定：何回追加読み込みするか
     MAX_LOAD_COUNT = 3
-
     for i in range(MAX_LOAD_COUNT):
         try:
-            # 要素を待機
             more_button = WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.XPATH, "//button[span[contains(text(), 'もっと見る')]]"))
             )
-            
-            # ボタンの位置までスクロール（これを入れると安定します）
             driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", more_button)
-            time.sleep(1) # スクロール後の安定待ち
-
-            # クリック実行
+            time.sleep(1)
             driver.execute_script("arguments[0].click();", more_button)
             print(f"  - 「もっと見る」ボタン押下 ({i+1}/{MAX_LOAD_COUNT})")
-            
-            # 読み込み待ち（通信環境に合わせて調整）
             time.sleep(3) 
-            
-        except Exception as e:
-            print("  - これ以上ボタンがないか、エラーが発生したため終了します")
+        except:
             break
-    # ------------------------------------
 
     soup = BeautifulSoup(driver.page_source, "html.parser")
     driver.quit()
@@ -596,7 +563,6 @@ def sort_yahoo_sheet(gc: gspread.Client):
     try:
         reqs = []
         for d in "月火水木金土日":
-            # 修正箇所：ここでも (曜日) をどこにあっても削除するように指定
             reqs.append({"findReplace": {"range": {"sheetId": worksheet.id, "startRowIndex": 1, "endRowIndex": MAX_SHEET_ROWS_FOR_REPLACE, "startColumnIndex": 2, "endColumnIndex": 3}, "find": rf"\({d}\)", "replacement": "", "searchByRegex": True}})
         
         reqs.append({"findReplace": {"range": {"sheetId": worksheet.id, "startRowIndex": 1, "endRowIndex": MAX_SHEET_ROWS_FOR_REPLACE, "startColumnIndex": 2, "endColumnIndex": 3}, "find": r"\s{2,}", "replacement": " ", "searchByRegex": True}})
@@ -676,9 +642,7 @@ def main():
     try: gc = build_gspread_client()
     except Exception as e: print(f"致命的エラー: {e}"); sys.exit(1)
     
-    # 合計カウント用の変数
     total_new_articles_count = 0
-    
     for k in keys:
         print(f"\n===== １ 取得: {k} =====")
         data = get_yahoo_news_with_selenium(k)
@@ -687,22 +651,14 @@ def main():
         new = [[d['URL'], d['タイトル'], d['投稿日時'], d['ソース']] for d in data if d['URL'] not in exist]
         if new: 
             ws.append_rows(new, value_input_option='USER_ENTERED')
-            # 合計のカウント
             total_new_articles_count += len(new)
         time.sleep(2)
 
-    # 追加新規記事数の表示
     print(f"\n★ 新規追加記事数: 合計 {total_new_articles_count} 件")
-
-    print("\n===== ２ 詳細取得 =====")
     fetch_details_and_update_sheet(gc)
-    print("\n===== ３ ソート・整形 =====")
     sort_yahoo_sheet(gc)
-    print("\n===== ４ Gemini分析 =====")
     analyze_with_gemini_and_update_sheet(gc)
-    print("\n===== ５ コメント収集・要約 =====")
     comment_scraper.run_comment_collection(gc, SHARED_SPREADSHEET_ID, SOURCE_SHEET_NAME, analyze_comment_summary)
-    
     print("\n--- 統合スクリプト完了 ---")
 
 if __name__ == '__main__':
