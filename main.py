@@ -274,10 +274,11 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
                 time.sleep(10)
                 continue
             if "503" in err_msg or "overloaded" in err_msg or "UNAVAILABLE" in err_msg:
-                wait_sec = 30 * (attempt + 1)
-                print(f"    !! Server Overloaded (503). Retrying in {wait_sec}s... ({attempt+1}/{MAX_RETRIES})")
+                wait_sec = (attempt + 1) * 40 + random.randint(1, 20) 
+                print(f"    !! Server Overloaded (503). Retrying in {wait_sec}s...")
                 time.sleep(wait_sec)
                 continue
+                
             print(f"    ! API Error: {e}")
             return None 
 
