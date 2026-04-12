@@ -82,13 +82,41 @@ else:
 CURRENT_KEY_INDEX = 0
 REQUEST_COUNT_PER_KEY = 0
 MAX_REQUESTS_BEFORE_ROTATE = 20 # 20回でローテーション
-NORMAL_WAIT_SECONDS = 45        # RPM制限対策 (20秒以上待機)
+NORMAL_WAIT_SECONDS = 35        # RPM制限対策 (20秒以上待機)
 
 GEMINI_PROMPT_TEMPLATE = None
 COMMENT_PROMPT_TEMPLATE = None
 
-# ====== ヘルパー関数群 ======
+# ====== 待機ロジック ======
+def wait_until_target():
+    """ ターゲット時刻 (04:49, 14:29) まで待機する """
+    target_times = [
+        datetime.strptime("04:49", "%H:%M").time(),
+        datetime.strptime("14:29", "%H:%M").time()
+    ]
+    
+    while True:
+        now = jst_now().time()
+        
+        # 現在時刻より後のターゲットがあればその中で一番早いもの、なければ翌日の04:49
+        future_targets = [t for t in target_times if t > now]
+        
+        if not future_targets:
+            print(f"現在時刻 {now.strftime('%H:%M')} です。本日のターゲットは終了しました。翌朝 04:49 を待機します。")
+            time.sleep(300) # 5分待機して再度判定
+            continue
+            
+        target = min(future_targets)
+        print(f"現在時刻: {now.strftime('%H:%M')} | ターゲット時刻: {target.strftime('%H:%M')} まで待機中...")
+        
+        # ターゲット時刻を過ぎていたらループを抜けて処理開始
+        if now >= target:
+            print(f"ターゲット時刻 {target.strftime('%H:%M')} に到達しました。処理を開始します。")
+            break
+        
+        time.sleep(60)
 
+# ====== ヘルパー関数群 ======
 def get_current_gemini_client() -> Optional[genai.Client]:
     """ 現在のインデックスに対応するAPIキーでクライアントを作成して返す """
     if not AVAILABLE_API_KEYS:
@@ -247,7 +275,7 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
     for attempt in range(MAX_RETRIES):
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash', # 最新モデル名に修正
+                model='gemini-2.5-flash',
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -285,7 +313,6 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
     return None
 
 # ====== 記事分析用関数 ======
-
 def analyze_article_batch(texts: List[str]) -> Optional[List[Dict[str, str]]]:
     prompt_template = load_merged_prompt()
     if not prompt_template: return None
@@ -330,7 +357,6 @@ def analyze_article_single(text: str) -> Dict[str, str]:
     prompt_template = load_merged_prompt()
     if not prompt_template: return default
 
-    # 単体実行時の文字数カット (バグ修正済み)
     if len(text) > 4000:
         trimmed_text = text[:2500] + "\n...[中略]...\n" + text[-1500:]
     else:
@@ -362,7 +388,6 @@ def analyze_article_single(text: str) -> Dict[str, str]:
     return default
 
 # ====== コメント要約用関数 ======
-
 def analyze_comment_summary(text: str) -> Dict[str, Any]:
     default = {
         "nissan_product_neg": "なし",
@@ -486,7 +511,6 @@ def fetch_article_body_and_comments(base_url: str) -> Tuple[str, int, Optional[s
     return "".join(full_body).strip() or "本文取得不可", cmt_cnt, ext_date
 
 # ====== メイン処理フロー ======
-
 def ensure_source_sheet(gc):
     sh = gc.open_by_key(SOURCE_SPREADSHEET_ID)
     try: ws = sh.worksheet(SOURCE_SHEET_NAME)
@@ -637,6 +661,9 @@ def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
     print("  Gemini分析完了。")
 
 def main():
+    # ★追加: ここで時刻待機を行う
+    wait_until_target()
+    
     print("--- 統合スクリプト開始 ---")
     keys = load_keywords(KEYWORD_FILE)
     if not keys: sys.exit(0)
