@@ -3,7 +3,7 @@ import re
 import requests
 from bs4 import BeautifulSoup
 import gspread
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone # 修正: JST対応
 
 # --- Selenium 関連 ---
 from selenium import webdriver
@@ -18,12 +18,35 @@ from selenium.webdriver.common.by import By
 COMMENTS_SHEET_NAME = "Comments"
 REQ_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"}
 MAX_SELENIUM_PAGES = 10 
+TZ_JST = timezone(timedelta(hours=9)) # 修正: JST定義
 
 # YahooニュースのHTML構造（クラス名）
 CLS_ARTICLE = "sc-169yn8p-3" # コメント枠
 CLS_USER_NAME = "sc-169yn8p-7" # 投稿者名
 CLS_BODY = "sc-169yn8p-10"    # 本文
 CLS_TIME = "sc-169yn8p-9"     # 投稿日時
+
+def wait_until_target():
+    """ ターゲット時刻 (04:49, 14:29) まで待機する """
+    target_times = [
+        datetime.strptime("04:49", "%H:%M").time(),
+        datetime.strptime("14:29", "%H:%M").time()
+    ]
+    
+    while True:
+        now = datetime.now(TZ_JST).time()
+        future_targets = [t for t in target_times if t > now]
+        
+        if not future_targets:
+            time.sleep(300) 
+            continue
+            
+        target = min(future_targets)
+        print(f"コメント収集待機中: ターゲット {target.strftime('%H:%M')} まで待機...")
+        
+        if now >= target:
+            break
+        time.sleep(60)
 
 def ensure_comments_sheet(sh: gspread.Spreadsheet):
     """ Commentsシートがなければ作成し、ヘッダーを設定する """
@@ -140,6 +163,9 @@ def set_row_height(ws, pixels):
     except: pass
 
 def run_comment_collection(gc: gspread.Client, source_sheet_id: str, source_sheet_name: str, summarizer_func):
+    # ★追加: ここで時刻待機
+    wait_until_target()
+    
     print("\n=====   ステップ⑤ コメント収集・要約・保存 (最新最適化版) =====")
     sh = gc.open_by_key(source_sheet_id)
     try: source_ws = sh.worksheet(source_sheet_name)
@@ -170,19 +196,17 @@ def run_comment_collection(gc: gspread.Client, source_sheet_id: str, source_shee
 
         # --- 3日前より古い記事を除外する判定 ---
         try:
-            # 曜日(例: (水))を除去して日時変換
             clean_date_str = re.sub(r'\([一-龠]\)', '', str(post_date)).strip() 
-            # 秒を含む形式 "2026/03/30 15:15:00" に対応
             dt_post = datetime.strptime(clean_date_str, '%Y/%m/%d %H:%M:%S')
             
-            three_days_ago = datetime.now() - timedelta(days=3)
-            if dt_post < three_days_ago:
+            # JSTベースで比較
+            three_days_ago = datetime.now(TZ_JST) - timedelta(days=3)
+            if dt_post.replace(tzinfo=TZ_JST) < three_days_ago:
                 continue 
         except Exception:
-            # 秒がない形式の場合の予備パース
             try:
                 dt_post = datetime.strptime(clean_date_str, '%Y/%m/%d %H:%M')
-                if dt_post < (datetime.now() - timedelta(days=3)): continue
+                if dt_post.replace(tzinfo=TZ_JST) < (datetime.now(TZ_JST) - timedelta(days=3)): continue
             except:
                 pass 
 
@@ -209,27 +233,21 @@ def run_comment_collection(gc: gspread.Client, source_sheet_id: str, source_shee
                 summary_combined = "\n\n".join(summary_data.get("summaries", [])) or "-"
                 ranking_combined = "\n".join(summary_data.get("topic_ranking", [])) or "-"
 
-                # 基本データ (A-H列)
                 base_data = [url, title, post_date, source, comment_count_str, prod_neg, summary_combined, ranking_combined]
                 
-                # コメント列を50列(500件相当)ずつに分割
                 chunk_size = 50
                 comment_chunks = [comment_cols[i:i + chunk_size] for i in range(0, len(comment_cols), chunk_size)]
 
                 try:
-                    # 1. 新規行作成（基本データ + 最初のチャンク）
                     first_row_data = base_data + (comment_chunks[0] if len(comment_chunks) > 0 else [])
                     dest_ws.append_rows([first_row_data], value_input_option='USER_ENTERED')
                     
-                    # 2. 今書き込んだ行の番号を特定
                     current_row_idx = len(dest_ws.col_values(1)) 
                     
-                    # 3. 501件目以降があれば横に継ぎ足し
                     if len(comment_chunks) > 1:
                         print(f"    > 残りのコメントを分割書き込み中...")
                         for j, chunk in enumerate(comment_chunks[1:]):
                             start_col = 9 + (j + 1) * chunk_size
-                            # range_name='R1C1' 形式で指定位置へ書き込み
                             dest_ws.update([chunk], f"R{current_row_idx}C{start_col}", value_input_option='USER_ENTERED')
                             time.sleep(1)
                 except Exception as e:
@@ -244,4 +262,4 @@ def run_comment_collection(gc: gspread.Client, source_sheet_id: str, source_shee
             if last_row > 1: dest_ws.sort((3, 'des'), range=f'A2:KN{last_row}') 
         except: pass
         set_row_height(dest_ws, 21)
-    print(f"   コメント収集完了: {process_count} 件処理しました。")
+    print(f"    コメント収集完了: {process_count} 件処理しました。")
