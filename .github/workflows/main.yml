@@ -1,23 +1,37 @@
 name: Yahoo News Scraper and Gemini Analyzer
 
 on:
-  schedule:
-    # JST 朝 06:30 (UTC 21:30) に自動実行
-    # 分 時 日 月 曜日 の順で指定
-    - cron: '30 21 * * *'
-  workflow_dispatch: # 手動実行も引き続き可能
+  workflow_dispatch: # GAS（API）からの起動、および手動実行用
 
 permissions:
   actions: write
   contents: read
 
 jobs:
-  run-script:
+  build:
     runs-on: ubuntu-latest
-
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # これを追加してテストする
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      # 14:30 (JST) まで待機するステップ
+      - name: Wait until target time (JST 14:30)
+        run: |
+          TARGET="05:30"
+          echo "Current time is $(date '+%H:%M') UTC."
+          echo "Waiting until $TARGET UTC (JST 14:30)..."
+          
+          while true; do
+            CURRENT=$(date '+%H:%M')
+            if [[ "$CURRENT" > "$TARGET" || "$CURRENT" == "$TARGET" ]]; then
+              echo "Reached target time ($CURRENT). Starting..."
+              break
+            fi
+            # 1分ごとにチェック
+            sleep 60
+          done
 
       - name: Set up Python
         uses: actions/setup-python@v5
