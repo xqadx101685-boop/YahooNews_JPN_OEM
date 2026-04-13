@@ -276,9 +276,10 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
                 time.sleep(10)
                 continue
             if "503" in err_msg or "overloaded" in err_msg or "UNAVAILABLE" in err_msg:
-                wait_sec = (attempt + 1) * 40 + random.randint(1, 20) 
-                print(f"    !! Server Overloaded (503). Retrying in {wait_sec}s...")
-                time.sleep(wait_sec)
+                print(f"    !! Server Overloaded (503). Rotating key and retrying...")
+                rotate_api_key(reason="503_error")
+                client = get_current_gemini_client()
+                time.sleep(10)
                 continue
                 
             print(f"    ! API Error: {e}")
@@ -582,7 +583,7 @@ def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
     except: return
     data_rows = ws.get_all_values()[1:]
     if not data_rows: return
-    print("\n=====   ステップ４ Gemini分析 (バッチ優先) =====")
+    print("\n=====  ステップ４ Gemini分析 (スロースタート版) =====")
     target_tasks = []
     for idx, row in enumerate(data_rows):
         row_num = idx + 2
@@ -598,40 +599,63 @@ def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
         print("  - 新規分析対象はありません。")
         return
 
+    # スロースタート設定: 最初の3件はバラ実行
+    FAST_TRACK_LIMIT = 3
     BATCH_SIZE = 3
-    for i in range(0, len(target_tasks), BATCH_SIZE):
-        batch = target_tasks[i : i + BATCH_SIZE]
-        texts = [t["body"] for t in batch]
-        row_nums = [t["row_num"] for t in batch]
-        print(f"  - 分析中 (行 {row_nums[0]} ~ {row_nums[-1]}) ...")
-        results = analyze_article_batch(texts)
-        if results:
-            for j, res in enumerate(results):
-                n_rel, n_neg = res["nissan_related"], res["nissan_negative"]
-                for txt in [n_rel, n_neg]:
-                    if any(x in txt for x in ["not mentioned", "no mention", "発見されませんでした", "言及はありません"]):
-                        if txt == n_rel: n_rel = "なし"
-                        if txt == n_neg: n_neg = "なし"
-                    if txt.lower() == "none":
-                        if txt == n_rel: n_rel = "なし"
-                        if txt == n_neg: n_neg = "なし"
-                update_sheet_with_retry(ws, f'G{row_nums[j]}:K{row_nums[j]}', [[res["company_info"], res["category"], res["sentiment"], n_rel, n_neg]])
-            print(f"    (Batch OK: {NORMAL_WAIT_SECONDS}s 待機)")
-            time.sleep(NORMAL_WAIT_SECONDS)
-        else:
-            print("    ! バッチ失敗 -> バラ実行")
-            for item in batch:
-                res = analyze_article_single(item["body"])
-                n_rel, n_neg = res["nissan_related"], res["nissan_negative"]
-                for txt in [n_rel, n_neg]:
-                    if any(x in txt for x in ["not mentioned", "no mention", "発見されませんでした", "言及はありません"]):
-                        if txt == n_rel: n_rel = "なし"
-                        if txt == n_neg: n_neg = "なし"
-                    if txt.lower() == "none":
-                        if txt == n_rel: n_rel = "なし"
-                        if txt == n_neg: n_neg = "なし"
-                update_sheet_with_retry(ws, f'G{item["row_num"]}:K{item["row_num"]}', [[res["company_info"], res["category"], res["sentiment"], n_rel, n_neg]])
+    
+    # 1. 最初の3件を個別に処理
+    for i in range(min(FAST_TRACK_LIMIT, len(target_tasks))):
+        task = target_tasks[i]
+        print(f"  - [スロースタート] 行 {task['row_num']} を個別分析中...")
+        res = analyze_article_single(task['body'])
+        n_rel, n_neg = res["nissan_related"], res["nissan_negative"]
+        # (共通のクリーニングロジック)
+        for txt in [n_rel, n_neg]:
+            if any(x in txt for x in ["not mentioned", "no mention", "発見されませんでした", "言及はありません"]):
+                if txt == n_rel: n_rel = "なし"
+                if txt == n_neg: n_neg = "なし"
+            if txt.lower() == "none":
+                if txt == n_rel: n_rel = "なし"
+                if txt == n_neg: n_neg = "なし"
+        update_sheet_with_retry(ws, f'G{task['row_num']}:K{task['row_num']}', [[res["company_info"], res["category"], res["sentiment"], n_rel, n_neg]])
+        time.sleep(NORMAL_WAIT_SECONDS)
+
+    # 2. 残りをバッチ処理
+    if len(target_tasks) > FAST_TRACK_LIMIT:
+        remaining_tasks = target_tasks[FAST_TRACK_LIMIT:]
+        for i in range(0, len(remaining_tasks), BATCH_SIZE):
+            batch = remaining_tasks[i : i + BATCH_SIZE]
+            texts = [t["body"] for t in batch]
+            row_nums = [t["row_num"] for t in batch]
+            print(f"  - 分析中 (行 {row_nums[0]} ~ {row_nums[-1]}) ...")
+            results = analyze_article_batch(texts)
+            if results:
+                for j, res in enumerate(results):
+                    n_rel, n_neg = res["nissan_related"], res["nissan_negative"]
+                    for txt in [n_rel, n_neg]:
+                        if any(x in txt for x in ["not mentioned", "no mention", "発見されませんでした", "言及はありません"]):
+                            if txt == n_rel: n_rel = "なし"
+                            if txt == n_neg: n_neg = "なし"
+                        if txt.lower() == "none":
+                            if txt == n_rel: n_rel = "なし"
+                            if txt == n_neg: n_neg = "なし"
+                    update_sheet_with_retry(ws, f'G{row_nums[j]}:K{row_nums[j]}', [[res["company_info"], res["category"], res["sentiment"], n_rel, n_neg]])
+                print(f"    (Batch OK: {NORMAL_WAIT_SECONDS}s 待機)")
                 time.sleep(NORMAL_WAIT_SECONDS)
+            else:
+                print("    ! バッチ失敗 -> 個別再実行")
+                for item in batch:
+                    res = analyze_article_single(item["body"])
+                    n_rel, n_neg = res["nissan_related"], res["nissan_negative"]
+                    for txt in [n_rel, n_neg]:
+                        if any(x in txt for x in ["not mentioned", "no mention", "発見されませんでした", "言及はありません"]):
+                            if txt == n_rel: n_rel = "なし"
+                            if txt == n_neg: n_neg = "なし"
+                        if txt.lower() == "none":
+                            if txt == n_rel: n_rel = "なし"
+                            if txt == n_neg: n_neg = "なし"
+                    update_sheet_with_retry(ws, f'G{item["row_num"]}:K{item["row_num"]}', [[res["company_info"], res["category"], res["sentiment"], n_rel, n_neg]])
+                    time.sleep(NORMAL_WAIT_SECONDS)
     print("  Gemini分析完了。")
 
 def main():
