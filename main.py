@@ -90,35 +90,6 @@ NORMAL_WAIT_SECONDS = 35        # RPM制限対策 (20秒以上待機)
 GEMINI_PROMPT_TEMPLATE = None
 COMMENT_PROMPT_TEMPLATE = None
 
-# ====== 待機ロジック ======
-def wait_until_target():
-    """ ターゲット時刻 (04:49, 14:29) まで待機する """
-    target_times = [
-        datetime.strptime("04:49", "%H:%M").time(),
-        datetime.strptime("14:29", "%H:%M").time()
-    ]
-    
-    while True:
-        now = jst_now().time()
-        
-        # 現在時刻より後のターゲットがあればその中で一番早いもの、なければ翌日の04:49
-        future_targets = [t for t in target_times if t > now]
-        
-        if not future_targets:
-            print(f"現在時刻 {now.strftime('%H:%M')} です。本日のターゲットは終了しました。翌朝 04:49 を待機します。")
-            time.sleep(300) # 5分待機して再度判定
-            continue
-            
-        target = min(future_targets)
-        print(f"現在時刻: {now.strftime('%H:%M')} | ターゲット時刻: {target.strftime('%H:%M')} まで待機中...")
-        
-        # ターゲット時刻を過ぎていたらループを抜けて処理開始
-        if now >= target:
-            print(f"ターゲット時刻 {target.strftime('%H:%M')} に到達しました。処理を開始します。")
-            break
-        
-        time.sleep(60)
-
 # ====== ヘルパー関数群 ======
 def get_current_gemini_client() -> Optional[genai.Client]:
     """ 現在のインデックスに対応するAPIキーでクライアントを作成して返す """
@@ -664,8 +635,6 @@ def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
     print("  Gemini分析完了。")
 
 def main():
-    # ★追加: ここで時刻待機を行う
-    # wait_until_target()
     
     print("--- 統合スクリプト開始 ---")
     keys = load_keywords(KEYWORD_FILE)
