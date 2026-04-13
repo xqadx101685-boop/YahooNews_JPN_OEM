@@ -617,9 +617,9 @@ def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
             if txt.lower() == "none":
                 if txt == n_rel: n_rel = "なし"
                 if txt == n_neg: n_neg = "なし"
-        update_sheet_with_retry(ws, f'G{task['row_num']}:K{task['row_num']}', [[res["company_info"], res["category"], res["sentiment"], n_rel, n_neg]])
+        update_sheet_with_retry(ws, f"G{task['row_num']}:K{task['row_num']}", [[res["company_info"], res["category"], res["sentiment"], n_rel, n_neg]])
         time.sleep(NORMAL_WAIT_SECONDS)
-
+        
     # 2. 残りをバッチ処理
     if len(target_tasks) > FAST_TRACK_LIMIT:
         remaining_tasks = target_tasks[FAST_TRACK_LIMIT:]
