@@ -26,28 +26,6 @@ CLS_USER_NAME = "sc-169yn8p-7" # 投稿者名
 CLS_BODY = "sc-169yn8p-10"    # 本文
 CLS_TIME = "sc-169yn8p-9"     # 投稿日時
 
-def wait_until_target():
-    """ ターゲット時刻 (04:49, 14:29) まで待機する """
-    target_times = [
-        datetime.strptime("04:49", "%H:%M").time(),
-        datetime.strptime("14:29", "%H:%M").time()
-    ]
-    
-    while True:
-        now = datetime.now(TZ_JST).time()
-        future_targets = [t for t in target_times if t > now]
-        
-        if not future_targets:
-            time.sleep(300) 
-            continue
-            
-        target = min(future_targets)
-        print(f"コメント収集待機中: ターゲット {target.strftime('%H:%M')} まで待機...")
-        
-        if now >= target:
-            break
-        time.sleep(60)
-
 def ensure_comments_sheet(sh: gspread.Spreadsheet):
     """ Commentsシートがなければ作成し、ヘッダーを設定する """
     try:
@@ -163,8 +141,6 @@ def set_row_height(ws, pixels):
     except: pass
 
 def run_comment_collection(gc: gspread.Client, source_sheet_id: str, source_sheet_name: str, summarizer_func):
-    # ★追加: ここで時刻待機
-    wait_until_target()
     
     print("\n=====   ステップ⑤ コメント収集・要約・保存 (最新最適化版) =====")
     sh = gc.open_by_key(source_sheet_id)
