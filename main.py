@@ -29,6 +29,9 @@ from google.api_core.exceptions import ResourceExhausted
 import comment_scraper
 # ------------------------------------
 
+print("=== 実行開始しました ===", flush=True)
+sys.stdout.flush()
+
 # ====== 設定 ======
 SHARED_SPREADSHEET_ID = os.environ.get("SPREADSHEET_KEY")
 if not SHARED_SPREADSHEET_ID:
