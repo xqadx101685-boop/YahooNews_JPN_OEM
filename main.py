@@ -665,7 +665,7 @@ def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
 
 def main():
     # ★追加: ここで時刻待機を行う
-    wait_until_target()
+    # wait_until_target()
     
     print("--- 統合スクリプト開始 ---")
     keys = load_keywords(KEYWORD_FILE)
