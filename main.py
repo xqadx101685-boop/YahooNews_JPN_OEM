@@ -486,13 +486,26 @@ def fetch_article_body_and_comments(base_url: str) -> Tuple[str, int, Optional[s
     return "".join(full_body).strip() or "本文取得不可", cmt_cnt, ext_date
 
 # ====== メイン処理フロー ======
-def ensure_source_sheet(gc):
-    sh = gc.open_by_key(SOURCE_SPREADSHEET_ID)
-    try: ws = sh.worksheet(SOURCE_SHEET_NAME)
-    except: ws = sh.add_worksheet(SOURCE_SHEET_NAME, MAX_SHEET_ROWS_FOR_REPLACE, len(YAHOO_SHEET_HEADERS))
-    if ws.row_values(1) != YAHOO_SHEET_HEADERS:
-        ws.update(range_name=f'A1:{gspread_util_col_to_letter(len(YAHOO_SHEET_HEADERS))}1', values=[YAHOO_SHEET_HEADERS])
-    return ws
+def ensure_source_sheet(gc, max_retries=5):
+    for attempt in range(max_retries):
+        try:
+            sh = gc.open_by_key(SOURCE_SPREADSHEET_ID)
+            try: 
+                ws = sh.worksheet(SOURCE_SHEET_NAME)
+            except: 
+                ws = sh.add_worksheet(SOURCE_SHEET_NAME, MAX_SHEET_ROWS_FOR_REPLACE, len(YAHOO_SHEET_HEADERS))
+            
+            if ws.row_values(1) != YAHOO_SHEET_HEADERS:
+                ws.update(range_name=f'A1:{gspread_util_col_to_letter(len(YAHOO_SHEET_HEADERS))}1', values=[YAHOO_SHEET_HEADERS])
+            return ws
+        except gspread.exceptions.APIError as e:
+            # 503エラーなどの場合は待機してリトライ
+            if e.response.status_code in [500, 502, 503, 504]:
+                print(f"  [Retry] スプレッドシート取得で503エラー。{10 * (attempt + 1)}秒待機して再試行...")
+                time.sleep(10 * (attempt + 1))
+            else:
+                raise e
+    raise RuntimeError("スプレッドシートへの接続に失敗しました（リトライ上限到達）")
 
 def fetch_details_and_update_sheet(gc: gspread.Client):
     sh = gc.open_by_key(SOURCE_SPREADSHEET_ID)
