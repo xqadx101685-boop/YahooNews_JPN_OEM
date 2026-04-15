@@ -238,7 +238,7 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
     client = get_current_gemini_client()
     if not client: return None
 
-    MAX_RETRIES = 5 
+    MAX_RETRIES = 10 
     safety_settings_free = [
         types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_ONLY_HIGH"),
         types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_ONLY_HIGH"),
@@ -263,7 +263,7 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
             print("    !! 429 Error (Quota Exceeded). Rotating key...")
             rotate_api_key(reason="429_error")
             client = get_current_gemini_client()
-            time.sleep(5)
+            time.sleep(27)
             continue
         
         except Exception as e:
@@ -273,13 +273,13 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
             if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
                 rotate_api_key(reason="429_in_msg")
                 client = get_current_gemini_client()
-                time.sleep(10)
+                time.sleep(27)
                 continue
             if "503" in err_msg or "overloaded" in err_msg or "UNAVAILABLE" in err_msg:
                 print(f"    !! Server Overloaded (503). Rotating key and retrying...")
                 rotate_api_key(reason="503_error")
                 client = get_current_gemini_client()
-                time.sleep(10)
+                time.sleep(27)
                 continue
                 
             print(f"    ! API Error: {e}")
@@ -642,20 +642,20 @@ def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
                     update_sheet_with_retry(ws, f'G{row_nums[j]}:K{row_nums[j]}', [[res["company_info"], res["category"], res["sentiment"], n_rel, n_neg]])
                 print(f"    (Batch OK: {NORMAL_WAIT_SECONDS}s 待機)")
                 time.sleep(NORMAL_WAIT_SECONDS)
-            else:
-                print("    ! バッチ失敗 -> 個別再実行")
-                for item in batch:
-                    res = analyze_article_single(item["body"])
-                    n_rel, n_neg = res["nissan_related"], res["nissan_negative"]
-                    for txt in [n_rel, n_neg]:
-                        if any(x in txt for x in ["not mentioned", "no mention", "発見されませんでした", "言及はありません"]):
-                            if txt == n_rel: n_rel = "なし"
-                            if txt == n_neg: n_neg = "なし"
-                        if txt.lower() == "none":
-                            if txt == n_rel: n_rel = "なし"
-                            if txt == n_neg: n_neg = "なし"
-                    update_sheet_with_retry(ws, f'G{item["row_num"]}:K{item["row_num"]}', [[res["company_info"], res["category"], res["sentiment"], n_rel, n_neg]])
-                    time.sleep(NORMAL_WAIT_SECONDS)
+            #else:
+            #    print("    ! バッチ失敗 -> 個別再実行")
+            #    for item in batch:
+            #        res = analyze_article_single(item["body"])
+            #        n_rel, n_neg = res["nissan_related"], res["nissan_negative"]
+            #        for txt in [n_rel, n_neg]:
+            #            if any(x in txt for x in ["not mentioned", "no mention", "発見されませんでした", "言及はありません"]):
+            #                if txt == n_rel: n_rel = "なし"
+            #                if txt == n_neg: n_neg = "なし"
+            #            if txt.lower() == "none":
+            #                if txt == n_rel: n_rel = "なし"
+            #                if txt == n_neg: n_neg = "なし"
+            #        update_sheet_with_retry(ws, f'G{item["row_num"]}:K{item["row_num"]}', [[res["company_info"], res["category"], res["sentiment"], n_rel, n_neg]])
+            #        time.sleep(NORMAL_WAIT_SECONDS)
     print("  Gemini分析完了。")
 
 def main():
