@@ -528,6 +528,18 @@ def fetch_details_and_update_sheet(gc: gspread.Client):
         
         is_content_fetched = (body.strip() and body != "本文取得不可")
         post_date_dt = parse_post_date(post_date_raw, now_jst)
+        # 追加: スプレッドシートの「数値形式の日付（シリアル値）」も扱う
+        if post_date_dt is None:
+            s = str(post_date_raw).strip()
+            # 数値っぽい文字列なら、Google Sheets の日付シリアルとみなす
+            if re.fullmatch(r'\d+(\.\d+)?', s):
+                try:
+                    serial = float(s)
+                    # Google Sheets / Excel の起点日: 1899-12-30
+                    base = datetime(1899, 12, 30, tzinfo=TZ_JST)
+                    post_date_dt = base + timedelta(days=serial)
+                except ValueError:
+                    pass
         is_within_three_days = (post_date_dt and post_date_dt >= three_days_ago)
         if is_content_fetched and not is_within_three_days: continue
         
