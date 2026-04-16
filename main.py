@@ -17,6 +17,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from google import genai
 from google.genai import types
+from google.oauth2.service_account import Credentials
 import comment_scraper
 
 # ====== 設定 ======
@@ -30,9 +31,21 @@ CURRENT_KEY_INDEX = 0
 def jst_now(): return datetime.now(TZ_JST)
 
 def build_gspread_client():
+    """ 最新のGoogle認証ライブラリを使用したクライアント生成 """
+    # SecretsからJSON文字列を読み込む
     info = json.loads(os.environ.get("GCP_SERVICE_ACCOUNT_KEY"))
-    scope = ['https://spreadsheets.google.com/feeds', 'https://spreadsheets.google.com/auth/drive']
-    return gspread.authorize(ServiceAccountCredentials.from_json_keyfile_dict(info, scope))
+    
+    # サービスアカウント情報の読み込みとスコープの設定
+    creds = Credentials.from_service_account_info(info)
+    scope = [
+        'https://spreadsheets.google.com/feeds',
+        'https://www.googleapis.com/auth/drive',
+        'https://www.googleapis.com/auth/spreadsheets'
+    ]
+    creds_with_scope = creds.with_scopes(scope)
+    
+    # gspreadの認証に使用
+    return gspread.authorize(creds_with_scope)
 
 def parse_post_date(raw, today_jst: datetime) -> Optional[datetime]:
     if not raw: return None
