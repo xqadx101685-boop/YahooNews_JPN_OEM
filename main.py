@@ -243,12 +243,55 @@ def ensure_source_sheet(gc):
 def fetch_details_and_update_sheet(gc: gspread.Client):
     ws = ensure_source_sheet(gc)
     rows = ws.get_all_values()[1:]
-    for idx, row in enumerate(rows):
+    for idx, data_row in enumerate(data_rows):
         url = row[0]
         if not url.startswith('http'): continue
         body, cmt, date = fetch_article_body_and_comments(url)
         update_sheet_with_retry(ws, f'C{idx+2}:F{idx+2}', [[date, "ソース", body, cmt]])
         time.sleep(1)
+
+def fetch_details_and_update_sheet(gc: gspread.Client):
+    sh = gc.open_by_key(SOURCE_SPREADSHEET_ID)
+    try: ws = sh.worksheet(SOURCE_SHEET_NAME)
+    except: return
+    
+    # 全データを取得
+    rows = ws.get_all_values()
+    if len(rows) <= 1: return
+    
+    # ヘッダーを除いたデータループ
+    for idx, row in enumerate(rows[1:]):
+        row_num = idx + 2  # 1行目はヘッダーなので+2
+        url = row[0]
+        body = row[4]
+        comment_count_str = row[5]
+        
+        # 本文が既に取得済みか判定
+        is_content_fetched = (body.strip() and body != "本文取得不可")
+
+        print(f"  - 行 {row_num}: 本文/コメント確認中...")
+        fetched_body, fetched_comment_count, extracted_date = fetch_article_body_and_comments(url)
+        
+        new_body = body
+        new_comment_count = comment_count_str
+        needs_update = False
+        
+        # 本文が未取得なら取得
+        if not is_content_fetched and fetched_body != "本文取得不可":
+            new_body = fetched_body
+            needs_update = True
+        
+        # コメント数は常に最新を取得して比較
+        # fetched_comment_countが-1でない（取得成功）かつ値が違う場合に更新
+        if fetched_comment_count != -1 and str(fetched_comment_count) != comment_count_str:
+            new_comment_count = str(fetched_comment_count)
+            needs_update = True
+        
+        # 更新が必要ならスプレッドシートへ書き込み
+        if needs_update:
+            # E列(本文)とF列(コメント数)を更新
+            update_sheet_with_retry(ws, f'E{row_num}:F{row_num}', [[new_body, new_comment_count]])
+            time.sleep(1 + random.random() * 0.5)
 
 def sort_yahoo_sheet(gc: gspread.Client):
     ws = ensure_source_sheet(gc)
@@ -274,16 +317,42 @@ def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
         else: break
 
 def main():
-    gc = build_gspread_client()
+    print("--- 統合スクリプト開始 ---")
     keys = load_keywords(KEYWORD_FILE)
+    if not keys: sys.exit(0)
+    try: gc = build_gspread_client()
+    except Exception as e: print(f"致命的エラー: {e}"); sys.exit(1)
+    
+    total_new_articles_count = 0  # <--- これが必要です
     for k in keys:
+        print(f"\n===== １ 取得: {k} =====")
         data = get_yahoo_news_with_selenium(k)
         ws = ensure_source_sheet(gc)
-        ws.append_rows([[d['URL'], d['タイトル'], d['投稿日時'], d['ソース']] for d in data])
+        
+        exist = set(str(r[0]) for r in ws.get_all_values()[1:] if len(r)>0 and str(r[0]).startswith("http"))
+        
+        new = []
+        now = jst_now()
+        for d in data:
+            if d['URL'] in exist: continue
+            dt = parse_post_date(d['投稿日時'], now)
+            if dt and (now - dt).total_seconds() <= 86400:
+                new.append([d['URL'], d['タイトル'], d['投稿日時'], d['ソース']])
+        
+        if new: 
+            ws.append_rows(new, value_input_option='USER_ENTERED')
+            total_new_articles_count += len(new)
+        time.sleep(2)
+
+    print(f"\n★ 新規追加記事数: 合計 {total_new_articles_count} 件")
     fetch_details_and_update_sheet(gc)
     sort_yahoo_sheet(gc)
     analyze_with_gemini_and_update_sheet(gc)
     comment_scraper.run_comment_collection(gc, SHARED_SPREADSHEET_ID, SOURCE_SHEET_NAME, analyze_comment_summary)
+    print("\n--- 統合スクリプト完了 ---")
 
 if __name__ == '__main__':
+    # モジュール読み込みパスの設定
+    if os.path.dirname(os.path.abspath(__file__)) not in sys.path:
+        sys.path.append(os.path.dirname(os.path.abspath(__file__)))
     main()
