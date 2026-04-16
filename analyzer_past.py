@@ -669,6 +669,11 @@ def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
                     update_sheet_with_retry(ws, f'G{row_nums[j]}:K{row_nums[j]}', [[res["company_info"], res["category"], res["sentiment"], n_rel, n_neg]])
                 print(f"    (Batch OK: {NORMAL_WAIT_SECONDS}s 待機)")
                 time.sleep(NORMAL_WAIT_SECONDS)
+            else:
+            # ★ ここを追加：このバッチで Gemini が失敗したら、
+            # ★ この run の残りのバッチはすべてスキップ
+                print("    ! Gemini分析エラー発生。この以降のバッチ分析をスキップします。")
+                break
             #else:
             #    print("    ! バッチ失敗 -> 個別再実行")
             #    for item in batch:
