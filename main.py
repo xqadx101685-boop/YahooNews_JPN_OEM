@@ -76,6 +76,10 @@ def call_gemini(prompt: str) -> Dict:
         return {"company_info": "N/A", "category": "N/A", "sentiment": "N/A", "nissan_related": "なし", "nissan_negative": "なし"}
 
 def main():
+    # --- デバッグ追加箇所 ---
+    key_debug = os.environ.get("GCP_SERVICE_ACCOUNT_KEY")
+    print(f"DEBUG: Key content: {key_debug}")
+    # ----------------------
     gc = build_gspread_client()
     ws = gc.open_by_key(SPREADSHEET_KEY).worksheet("Yahoo")
     now = jst_now()
