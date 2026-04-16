@@ -9,10 +9,10 @@ jobs:
     env:
       # 【重要】サーバー全体を日本時間設定にする
       TZ: Asia/Tokyo
-      # 【重要】Node.js 24への移行警告対応
+      # 【重要】Node.js 24への強制移行対応
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       
-      # 既存の環境変数
+      # 環境変数
       SPREADSHEET_KEY: ${{ secrets.SPREADSHEET_KEY }}
       GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
       GOOGLE_API_KEY_1: ${{ secrets.GOOGLE_API_KEY_1 }}
@@ -32,8 +32,19 @@ jobs:
 
       - name: Install dependencies
         run: |
+          pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Scraper
+      - name: Run Main Scraper (Latest News & Comments)
         run: |
           python -u main.py
+
+      - name: Run Past Analyzer (Past 4 Days)
+        run: |
+          python -u analyzer_past.py
+
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "Process finished."
+          exit 0
