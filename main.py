@@ -515,7 +515,8 @@ def fetch_details_and_update_sheet(gc: gspread.Client):
     if len(all_values) <= 1: return
     data_rows = all_values[1:]
     now_jst = jst_now()
-    three_days_ago = (now_jst - timedelta(days=3)).replace(hour=0, minute=0, second=0, microsecond=0)
+    # three_days_ago = (now_jst - timedelta(days=3)).replace(hour=0, minute=0, second=0, microsecond=0)
+    three_days_ago = now_jst - timedelta(hours=24)
     
     for idx, data_row in enumerate(data_rows):
         if len(data_row) < len(YAHOO_SHEET_HEADERS): data_row.extend([''] * (len(YAHOO_SHEET_HEADERS) - len(data_row)))
