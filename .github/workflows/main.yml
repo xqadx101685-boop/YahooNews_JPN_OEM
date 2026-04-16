@@ -35,11 +35,21 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
+      # JST の現在「時」（HH）を取得
+      - name: Get current JST hour
+        id: time
+        run: |
+          echo "jst_hour=$(date +'%H')" >> $GITHUB_OUTPUT
+          echo "Current JST time: $(date +'%Y-%m-%d %H:%M:%S')"
+
+      # main.py はいつでも実行
       - name: Run Main Scraper (Latest News & Comments)
         run: |
           python -u main.py
 
+      # analyzer_past.py は JST 04:00〜04:59 に起動した実行だけ動かす
       - name: Run Past Analyzer (Past 4 Days)
+        if: steps.time.outputs.jst_hour == '06'
         run: |
           python -u analyzer_past.py
 
