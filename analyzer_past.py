@@ -26,7 +26,7 @@ from google.genai import types
 from google.api_core.exceptions import ResourceExhausted
 
 # --- コメント収集用モジュールのインポート ---
-#import comment_scraper
+import comment_scraper
 # ------------------------------------
 
 print("=== 実行開始しました ===", flush=True)
@@ -541,7 +541,6 @@ def fetch_details_and_update_sheet(gc: gspread.Client):
                     post_date_dt = base + timedelta(days=serial)
                 except ValueError:
                     pass
-
         is_within_three_days = (post_date_dt and post_date_dt >= three_days_ago)
         if is_content_fetched and not is_within_three_days: continue
         
@@ -674,6 +673,7 @@ def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
             # ★ この run の残りのバッチはすべてスキップ
                 print("    ! Gemini分析エラー発生。この以降のバッチ分析をスキップします。")
                 break
+        
             #else:
             #    print("    ! バッチ失敗 -> 個別再実行")
             #    for item in batch:
@@ -702,6 +702,18 @@ def main():
     for k in keys:
         print(f"\n===== １ 取得: {k} =====")
         data = get_yahoo_news_with_selenium(k)
+        # === ここから24時間以内フィルタの追加部分 ===
+        now_jst = jst_now()
+        twenty_four_hours_ago = now_jst - timedelta(days=20)
+        filtered_data = []
+        for d in data:
+            dt = parse_post_date(d.get("投稿日時"), now_jst)
+            # 日付が正しくパースでき、かつ20日以内のものだけ残す
+            if dt and dt >= twenty_four_hours_ago:
+                filtered_data.append(d)
+        data = filtered_data
+        # === 24時間以内フィルタ ここまで ===
+
         ws = ensure_source_sheet(gc)
         exist = set(str(r[0]) for r in ws.get_all_values()[1:] if len(r)>0 and str(r[0]).startswith("http"))
         new = [[d['URL'], d['タイトル'], d['投稿日時'], d['ソース']] for d in data if d['URL'] not in exist]
@@ -714,7 +726,7 @@ def main():
     fetch_details_and_update_sheet(gc)
     sort_yahoo_sheet(gc)
     analyze_with_gemini_and_update_sheet(gc)
-    #comment_scraper.run_comment_collection(gc, SHARED_SPREADSHEET_ID, SOURCE_SHEET_NAME, analyze_comment_summary)
+    comment_scraper.run_comment_collection(gc, SHARED_SPREADSHEET_ID, SOURCE_SHEET_NAME, analyze_comment_summary)
     print("\n--- 統合スクリプト完了 ---")
 
 if __name__ == '__main__':
