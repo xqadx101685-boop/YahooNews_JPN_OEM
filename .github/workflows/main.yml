@@ -47,7 +47,7 @@ jobs:
         run: |
           python -u main.py
 
-      # analyzer_past.py は JST 04:00〜04:59 に起動した実行だけ動かす
+      # analyzer_past.py は JST 06:00〜06:59 に起動した実行だけ動かす
       - name: Run Past Analyzer (Past 4 Days)
         if: steps.time.outputs.jst_hour == '06'
         run: |
