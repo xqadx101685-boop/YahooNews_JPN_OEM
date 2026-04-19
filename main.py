@@ -85,7 +85,7 @@ else:
 CURRENT_KEY_INDEX = 0
 REQUEST_COUNT_PER_KEY = 0
 MAX_REQUESTS_BEFORE_ROTATE = 20 # 20回でローテーション
-NORMAL_WAIT_SECONDS = 35        # RPM制限対策 (20秒以上待機)
+NORMAL_WAIT_SECONDS = 41        # RPM制限対策 (20秒以上待機)
 
 GEMINI_PROMPT_TEMPLATE = None
 COMMENT_PROMPT_TEMPLATE = None
@@ -627,7 +627,7 @@ def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
 
     # スロースタート設定: 最初の3件はバラ実行
     FAST_TRACK_LIMIT = 3
-    BATCH_SIZE = 3
+    BATCH_SIZE = 5
     
     # 1. 最初の3件を個別に処理
     for i in range(min(FAST_TRACK_LIMIT, len(target_tasks))):
