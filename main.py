@@ -610,17 +610,49 @@ def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
     data_rows = ws.get_all_values()[1:]
     if not data_rows: return
     print("\n=====  ステップ４ Gemini分析 (スロースタート版) =====")
+    now_jst = jst_now()
+    cutoff_dt = now_jst - timedelta(hours=24)
+    
     target_tasks = []
+
     for idx, row in enumerate(data_rows):
         row_num = idx + 2
-        if len(row) < len(YAHOO_SHEET_HEADERS): row.extend([''] * (len(YAHOO_SHEET_HEADERS) - len(row)))
-        body = str(row[4])
-        if all(str(v).strip() for v in row[6:11]): continue 
-        if not body.strip() or body == "本文取得不可":
-            update_sheet_with_retry(ws, f'G{row_num}:K{row_num}', [['N/A(No Body)', 'N/A', 'N/A', 'N/A', 'N/A']])
-            continue
-        target_tasks.append({"row_num": row_num, "body": body})
+        if len(row) < len(YAHOO_SHEET_HEADERS):
+            row.extend([''] * (len(YAHOO_SHEET_HEADERS) - len(row)))
 
+        body = str(row[4])
+
+        # すでに G〜K が埋まっていればスキップ（従来どおり）
+        if all(str(v).strip() for v in row[6:11]):
+            continue 
+
+        # 本文が無い / 取得不可なら N/A を入れてスキップ（従来どおり）
+        if not body.strip() or body == "本文取得不可":
+            update_sheet_with_retry(ws, f'G{row_num}:K{row_num}',
+                                    [['N/A(No Body)', 'N/A', 'N/A', 'N/A', 'N/A']])
+            continue
+
+        # ★ 追加: 投稿日時が24時間以内かチェック
+        post_date_raw = str(row[2])
+        post_dt = parse_post_date(post_date_raw, now_jst)
+
+        # 必要ならシリアル値（数値）もサポート（fetch_details と同じロジック）
+        if post_dt is None:
+            s = post_date_raw.strip()
+            if re.fullmatch(r'\d+(\.\d+)?', s):
+                try:
+                    serial = float(s)
+                    base = datetime(1899, 12, 30, tzinfo=TZ_JST)
+                    post_dt = base + timedelta(days=serial)
+                except ValueError:
+                    pass
+
+        # 24hより前の記事なら Gemini 対象外
+        if not (post_dt and post_dt >= cutoff_dt):
+            continue
+
+        # ここまで来たものだけ Gemini 対象
+        target_tasks.append({"row_num": row_num, "body": body})
     if not target_tasks:
         print("  - 新規分析対象はありません。")
         return
