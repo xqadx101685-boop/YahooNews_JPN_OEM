@@ -758,9 +758,9 @@ def main():
         time.sleep(2)
 
     print(f"\n★ 新規追加記事数: 合計 {total_new_articles_count} 件")
-    fetch_details_and_update_sheet(gc)
-    sort_yahoo_sheet(gc)
-    analyze_with_gemini_and_update_sheet(gc)
+    #fetch_details_and_update_sheet(gc)
+    #sort_yahoo_sheet(gc)
+    #analyze_with_gemini_and_update_sheet(gc)
     if not GEMINI_FATAL_ERROR:
         comment_scraper.run_comment_collection(gc, SHARED_SPREADSHEET_ID, SOURCE_SHEET_NAME, analyze_comment_summary)
     else:
