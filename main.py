@@ -89,6 +89,7 @@ NORMAL_WAIT_SECONDS = 41        # RPM制限対策 (20秒以上待機)
 
 GEMINI_PROMPT_TEMPLATE = None
 COMMENT_PROMPT_TEMPLATE = None
+GEMINI_FATAL_ERROR = False
 
 # ====== ヘルパー関数群 ======
 def get_current_gemini_client() -> Optional[genai.Client]:
@@ -604,6 +605,7 @@ def sort_yahoo_sheet(gc: gspread.Client):
     set_row_height(worksheet, 21)
 
 def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
+    global GEMINI_FATAL_ERROR  # ★追加
     sh = gc.open_by_key(SOURCE_SPREADSHEET_ID)
     try: ws = sh.worksheet(SOURCE_SHEET_NAME)
     except: return
@@ -704,6 +706,7 @@ def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
             # ★ ここを追加：このバッチで Gemini が失敗したら、
             # ★ この run の残りのバッチはすべてスキップ
                 print("    ! Gemini分析エラー発生。この以降のバッチ分析をスキップします。")
+                GEMINI_FATAL_ERROR = True   # ★追加: フラグを立てる
                 break
         
             #else:
@@ -758,7 +761,11 @@ def main():
     fetch_details_and_update_sheet(gc)
     sort_yahoo_sheet(gc)
     analyze_with_gemini_and_update_sheet(gc)
-    comment_scraper.run_comment_collection(gc, SHARED_SPREADSHEET_ID, SOURCE_SHEET_NAME, analyze_comment_summary)
+    if not GEMINI_FATAL_ERROR:
+        comment_scraper.run_comment_collection(gc, SHARED_SPREADSHEET_ID, SOURCE_SHEET_NAME, analyze_comment_summary)
+    else:
+        print("  ※ Gemini分析エラー発生のため、この実行ではコメント収集・要約をスキップします。")
+        
     print("\n--- 統合スクリプト完了 ---")
 
 if __name__ == '__main__':
