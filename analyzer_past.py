@@ -226,10 +226,10 @@ def update_sheet_with_retry(ws, range_name, values, max_retries=3):
             return
         except gspread.exceptions.APIError as e:
             if any(c in str(e) for c in ['500', '502', '503']):
-                time.sleep(30 * (attempt + 1))
+                time.sleep(48 * (attempt + 1))
             else: raise e
         except Exception:
-            time.sleep(30 * (attempt + 1))
+            time.sleep(48 * (attempt + 1))
     print(f"  !! 更新失敗: {range_name}")
 
 # ====== Gemini 共通呼び出し関数 ======
