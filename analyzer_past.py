@@ -502,7 +502,7 @@ def ensure_source_sheet(gc, max_retries=5):
             # 503エラーなどの場合は待機してリトライ
             if e.response.status_code in [500, 502, 503, 504]:
                 print(f"  [Retry] スプレッドシート取得で503エラー。{10 * (attempt + 1)}秒待機して再試行...")
-                time.sleep(10 * (attempt + 1))
+                time.sleep(28 * (attempt + 1))
             else:
                 raise e
     raise RuntimeError("スプレッドシートへの接続に失敗しました（リトライ上限到達）")
