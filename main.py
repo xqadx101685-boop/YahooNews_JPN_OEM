@@ -227,10 +227,10 @@ def update_sheet_with_retry(ws, range_name, values, max_retries=3):
             return
         except gspread.exceptions.APIError as e:
             if any(c in str(e) for c in ['500', '502', '503']):
-                time.sleep(45 * (attempt + 1))
+                time.sleep(57 * (attempt + 1))
             else: raise e
         except Exception:
-            time.sleep(45 * (attempt + 1))
+            time.sleep(57 * (attempt + 1))
     print(f"  !! 更新失敗: {range_name}")
 
 # ====== Gemini 共通呼び出し関数 ======
@@ -264,7 +264,7 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
             print("    !! 429 Error (Quota Exceeded). Rotating key...")
             rotate_api_key(reason="429_error")
             client = get_current_gemini_client()
-            time.sleep(45)
+            time.sleep(57)
             continue
         
         except Exception as e:
@@ -274,13 +274,13 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
             if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
                 rotate_api_key(reason="429_in_msg")
                 client = get_current_gemini_client()
-                time.sleep(45)
+                time.sleep(57)
                 continue
             if "503" in err_msg or "overloaded" in err_msg or "UNAVAILABLE" in err_msg:
                 print(f"    !! Server Overloaded (503). Rotating key and retrying...")
                 rotate_api_key(reason="503_error")
                 client = get_current_gemini_client()
-                time.sleep(45)
+                time.sleep(57)
                 continue
                 
             print(f"    ! API Error: {e}")
@@ -503,7 +503,7 @@ def ensure_source_sheet(gc, max_retries=5):
             # 503エラーなどの場合は待機してリトライ
             if e.response.status_code in [500, 502, 503, 504]:
                 print(f"  [Retry] スプレッドシート取得で503エラー。{10 * (attempt + 1)}秒待機して再試行...")
-                time.sleep(10 * (attempt + 1))
+                time.sleep(28 * (attempt + 1))
             else:
                 raise e
     raise RuntimeError("スプレッドシートへの接続に失敗しました（リトライ上限到達）")
