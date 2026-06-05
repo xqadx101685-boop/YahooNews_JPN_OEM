@@ -167,6 +167,22 @@ def build_gspread_client() -> gspread.Client:
     except Exception as e:
         raise RuntimeError(f"Google認証失敗: {e}")
 
+# ★ 追加: open_by_key 用の共通リトライ関数
+def open_spreadsheet_with_retry(gc: gspread.Client, key: str, max_retries: int = 5) -> gspread.Spreadsheet:
+    for attempt in range(max_retries):
+        try:
+            return gc.open_by_key(key)
+        except gspread.exceptions.APIError as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            msg = str(e)
+            if status in (409, 500, 502, 503, 504) or "The operation was aborted" in msg:
+                wait = 10 * (attempt + 1)
+                print(f"  [Retry] open_by_key でエラー {status} / '{msg}'. {wait}秒待機して再試行 ({attempt+1}/{max_retries}) ...")
+                time.sleep(wait)
+                continue
+            raise
+    raise RuntimeError("スプレッドシートのオープンに失敗しました（リトライ上限到達）")
+
 def load_keywords(filename: str) -> List[str]:
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -251,7 +267,9 @@ def update_sheet_with_retry(ws, range_name, values, max_retries=3):
             ws.update(range_name=range_name, values=values, value_input_option='USER_ENTERED')
             return
         except gspread.exceptions.APIError as e:
-            if any(c in str(e) for c in ['500', '502', '503']):
+            msg = str(e)
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status in (409, 500, 502, 503, 504) or any(c in msg for c in ['500', '502', '503', 'The operation was aborted']):
                 time.sleep(48 * (attempt + 1))
             else:
                 raise e
@@ -574,7 +592,7 @@ def fetch_article_body_and_comments(base_url: str) -> Tuple[str, int, Optional[s
 def ensure_source_sheet(gc, max_retries=5):
     for attempt in range(max_retries):
         try:
-            sh = gc.open_by_key(SOURCE_SPREADSHEET_ID)
+            sh = open_spreadsheet_with_retry(gc, SOURCE_SPREADSHEET_ID, max_retries=max_retries)
             try:
                 ws = sh.worksheet(SOURCE_SHEET_NAME)
             except Exception:
@@ -594,7 +612,7 @@ def ensure_source_sheet(gc, max_retries=5):
     raise RuntimeError("スプレッドシートへの接続に失敗しました（リトライ上限到達）")
 
 def fetch_details_and_update_sheet(gc: gspread.Client):
-    sh = gc.open_by_key(SOURCE_SPREADSHEET_ID)
+    sh = open_spreadsheet_with_retry(gc, SOURCE_SPREADSHEET_ID)
     try:
         ws = sh.worksheet(SOURCE_SHEET_NAME)
     except Exception:
@@ -678,7 +696,7 @@ def fetch_details_and_update_sheet(gc: gspread.Client):
             time.sleep(1 + random.random() * 0.5)
 
 def sort_yahoo_sheet(gc: gspread.Client):
-    sh = gc.open_by_key(SOURCE_SPREADSHEET_ID)
+    sh = open_spreadsheet_with_retry(gc, SOURCE_SPREADSHEET_ID)
     try:
         worksheet = sh.worksheet(SOURCE_SHEET_NAME)
     except Exception:
@@ -765,7 +783,7 @@ def sort_yahoo_sheet(gc: gspread.Client):
     set_row_height(worksheet, 21)
 
 def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
-    sh = gc.open_by_key(SOURCE_SPREADSHEET_ID)
+    sh = open_spreadsheet_with_retry(gc, SOURCE_SPREADSHEET_ID)
     try:
         ws = sh.worksheet(SOURCE_SHEET_NAME)
     except Exception:
@@ -871,7 +889,7 @@ def run_second_comment_pass(gc: gspread.Client):
     """
     print("\n=====  2回目コメント分析（5〜36時間経過記事）開始  =====")
 
-    sh = gc.open_by_key(SHARED_SPREADSHEET_ID)
+    sh = open_spreadsheet_with_retry(gc, SHARED_SPREADSHEET_ID)
 
     # 元記事（Yahoo）シート
     try:
