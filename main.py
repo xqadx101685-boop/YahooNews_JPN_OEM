@@ -144,6 +144,7 @@ def parse_post_date(raw, today_jst: datetime) -> Optional[datetime]:
         return None
     if isinstance(raw, str):
         s = raw.strip()
+        # ★ 修正: "(月)" 〜 "(日)" のカッコ付き曜日を削除
         s = re.sub(r"$[月火水木金土日]$", "", s).strip()
         s = s.replace('配信', '').strip()
         for fmt in ("%Y/%m/%d %H:%M:%S", "%y/%m/%d %H:%M", "%m/%d %H:%M", "%Y/%m/%d %H:%M"):
