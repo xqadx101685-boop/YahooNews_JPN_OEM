@@ -145,7 +145,7 @@ def parse_post_date(raw, today_jst: datetime) -> Optional[datetime]:
     if isinstance(raw, str):
         s = raw.strip()
         # ★ 修正: "(月)" 〜 "(日)" のカッコ付き曜日を削除
-        s = re.sub(r"$[月火水木金土日]$", "", s).strip()
+        s = re.sub(r"\([月火水木金土日]\)", "", s).strip()
         s = s.replace('配信', '').strip()
         for fmt in ("%Y/%m/%d %H:%M:%S", "%y/%m/%d %H:%M", "%m/%d %H:%M", "%Y/%m/%d %H:%M"):
             try:
@@ -575,7 +575,7 @@ def get_yahoo_news_with_selenium(keyword: str) -> list[dict]:
                     fmt_date = format_datetime(dt)
                 else:
                     fmt_date = re.sub(
-                        r"$[月火水木金土日]$$", "", date_str
+                        r"\([月火水木金土日]\)$", "", date_str                         
                     ).strip()
             except:
                 pass
@@ -623,7 +623,7 @@ def fetch_article_body_and_comments(base_url: str) -> Tuple[str, int, Optional[s
             )
             if art_div:
                 m = re.search(
-                    r'(\d{1,2}/\d{1,2})$[月火水木金土日]$(\s*)(\d{1,2}:\d{2})配信',
+                    r'(\d{1,2}/\d{1,2})\([月火水木金土日]\)(\s*)(\d{1,2}:\d{2})配信',
                     art_div.get_text()[:500]
                 )
                 if m:
@@ -765,7 +765,7 @@ def fetch_details_and_update_sheet(gc: gspread.Client):
                 new_post_date = format_datetime(dt)
             else:
                 new_post_date = re.sub(
-                    r"$[月火水木金土日]$$", "", extracted_date
+                    r"\([月火水木金土日]\)$", "", extracted_date
                 ).strip()
             needs_update = True
             
