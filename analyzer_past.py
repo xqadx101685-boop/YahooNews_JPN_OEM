@@ -196,17 +196,26 @@ def load_merged_prompt() -> str:
     global GEMINI_PROMPT_TEMPLATE
     if GEMINI_PROMPT_TEMPLATE:
         return GEMINI_PROMPT_TEMPLATE
+    # --- ここから追加：今日の日付を取得 ---
+    today_str = jst_now().strftime("%Y年%m月%d日")
+    # ------------------------------------
+    
     combined = []
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         for fname in ALL_PROMPT_FILES[:-1]:
             with open(os.path.join(script_dir, fname), 'r', encoding='utf-8') as f:
-                combined.append(f.read().strip())
+                content = f.read().strip()
+                # --- ここから追加：プロンプト内の {TODAY} を置換 ---
+                content = content.replace("{TODAY}", today_str)
+                # ----------------------------------------------
+                combined.append(content)
+        
         base = combined[0] + "\n" + "\n".join(combined[1:])
         base += "\n\n【重要】\n該当する情報（特に日産への言及やネガティブ要素）がない場合は、説明文や翻訳を一切書かず、必ず単語で『なし』とだけ出力してください。"
         base += "\n\n記事本文:\n{TEXT_TO_ANALYZE}"
         GEMINI_PROMPT_TEMPLATE = base
-        print(" 記事分析用プロンプト統合ロード完了。")
+        print(f" 記事分析用プロンプト統合ロード完了（基準日: {today_str}）。")
         return base
     except Exception as e:
         print(f"プロンプト読込エラー: {e}")
