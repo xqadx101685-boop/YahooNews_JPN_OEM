@@ -347,7 +347,7 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=schema,
-                    safety_settings=safety_settings_free
+                    safety_settings=safety_settings_free,
                     temperature=1.0, 
                 ),
             )
