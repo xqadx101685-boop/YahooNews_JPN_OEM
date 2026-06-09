@@ -334,10 +334,10 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
     if not client:
         return None
     
-    print("\n" + "="*50)
-    print("【DEBUG: 送信プロンプト確認】")
-    print(prompt)
-    print("="*50 + "\n")
+    #print("\n" + "="*50)
+    #print("【DEBUG: 送信プロンプト確認】")
+    #print(prompt)
+    #print("="*50 + "\n")
     
     MAX_RETRIES = 20 
     safety_settings_free = [
