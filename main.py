@@ -325,7 +325,12 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
     client = get_current_gemini_client()
     if not client:
         return None
-
+    
+    print("\n" + "="*50)
+    print("【DEBUG: 送信プロンプト確認】")
+    print(prompt)
+    print("="*50 + "\n")
+    
     MAX_RETRIES = 20 
     safety_settings_free = [
         types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_ONLY_HIGH"),
@@ -337,12 +342,13 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
     for attempt in range(MAX_RETRIES):
         try:
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-3-flash',
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=schema,
                     safety_settings=safety_settings_free
+                    temperature=1.0, 
                 ),
             )
             return json.loads(response.text.strip())
