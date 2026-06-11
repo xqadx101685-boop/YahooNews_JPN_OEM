@@ -87,6 +87,7 @@ else:
 
 # グローバル制御変数
 CURRENT_KEY_INDEX = 0
+DEBUG_PRINT_COUNT = 0  # ← これを追加（デバッグ表示回数の記録用）
 REQUEST_COUNT_PER_KEY = 0
 MAX_REQUESTS_BEFORE_ROTATE = 20  # 20回でローテーション
 NORMAL_WAIT_SECONDS = 41         # RPM制限対策 (20秒以上待機)
@@ -329,15 +330,19 @@ def update_sheet_with_retry(ws, range_name, values, max_retries=3):
 
 # ====== Gemini 共通呼び出し関数 ======
 def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) -> Any:
+    global DEBUG_PRINT_COUNT  # ← 【重要】この1行を必ず追加してください
     increment_request_count()
     client = get_current_gemini_client()
     if not client:
         return None
     
-    #print("\n" + "="*50)
-    #print("【DEBUG: 送信プロンプト確認】")
-    #print(prompt)
-    #print("="*50 + "\n")
+    # --- 最初の2回だけデバッグ表示を行う ---
+    if DEBUG_PRINT_COUNT < 2:
+        print("\n" + "="*50)
+        print(f"【DEBUG: 送信プロンプト確認 ({DEBUG_PRINT_COUNT + 1}回目)】")
+        print(prompt)
+        print("="*50 + "\n")
+        DEBUG_PRINT_COUNT += 1
     
     MAX_RETRIES = 20 
     safety_settings_free = [
