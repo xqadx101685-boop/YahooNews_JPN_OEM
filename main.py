@@ -330,13 +330,12 @@ def update_sheet_with_retry(ws, range_name, values, max_retries=3):
 
 # ====== Gemini 共通呼び出し関数 ======
 def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) -> Any:
-    global DEBUG_PRINT_COUNT  # ← 【重要】この1行を必ず追加してください
+    global DEBUG_PRINT_COUNT
     increment_request_count()
     client = get_current_gemini_client()
     if not client:
         return None
     
-    # --- 最初の2回だけデバッグ表示を行う ---
     if DEBUG_PRINT_COUNT < 2:
         print("\n" + "="*50)
         print(f"【DEBUG: 送信プロンプト確認 ({DEBUG_PRINT_COUNT + 1}回目)】")
@@ -375,13 +374,24 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
         
         except Exception as e:
             err_msg = str(e)
+
+            # 403 / PERMISSION_DENIED もローテーション対象にしたい場合
+            if "403" in err_msg or "PERMISSION_DENIED" in err_msg:
+                print("    !! 403 PERMISSION_DENIED. Rotating key...")
+                rotate_api_key(reason="403_error")
+                client = get_current_gemini_client()
+                time.sleep(10)
+                continue
+
             if "restricted HarmBlockThreshold" in err_msg:
                 return None
+
             if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
                 rotate_api_key(reason="429_in_msg")
                 client = get_current_gemini_client()
                 time.sleep(57)
                 continue
+
             if "503" in err_msg or "overloaded" in err_msg or "UNAVAILABLE" in err_msg:
                 print(f"    !! Server Overloaded (503). Rotating key and retrying...")
                 rotate_api_key(reason="503_error")
@@ -389,9 +399,10 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
                 time.sleep(57)
                 continue
                 
-            print(f"    ! API Error: {e}")
-            return None 
+            print(f"    ! API Error (non-retryable): {e}")
+            break  # ここでは return せずループを抜ける
 
+    # ここまで来たら、すべての試行が失敗
     return None
 
 # ====== 記事分析用関数 ======
