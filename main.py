@@ -91,6 +91,7 @@ DEBUG_PRINT_COUNT = 0  # ← これを追加（デバッグ表示回数の記録
 REQUEST_COUNT_PER_KEY = 0
 MAX_REQUESTS_BEFORE_ROTATE = 20  # 20回でローテーション
 NORMAL_WAIT_SECONDS = 41         # RPM制限対策 (20秒以上待機)
+COMMENT_PROMPT_SHOWN = False
 
 GEMINI_PROMPT_TEMPLATE = None
 COMMENT_PROMPT_TEMPLATE = None
@@ -336,7 +337,7 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
     if not client:
         return None
     
-    if DEBUG_PRINT_COUNT < 2:
+    if DEBUG_PRINT_COUNT < 1:
         print("\n" + "="*50)
         print(f"【DEBUG: 送信プロンプト確認 ({DEBUG_PRINT_COUNT + 1}回目)】")
         print(prompt)
@@ -507,7 +508,15 @@ def analyze_comment_summary(text: str, target_company: str = "日産") -> Dict[s
         return default
     
     prompt = prompt_template.replace("{TEXT_TO_ANALYZE}", text[:100000]).replace("{TARGET_COMPANY}", target_company)
-    
+
+    global COMMENT_PROMPT_SHOWN
+    if not COMMENT_PROMPT_SHOWN:
+        print("\n" + "="*60)
+        print("【DEBUG: コメント要約用 Gemini プロンプト（最初の1回のみ）】")
+        print(prompt)
+        print("="*60 + "\n")
+        COMMENT_PROMPT_SHOWN = True
+
     schema = {
         "type": "object",
         "properties": {
