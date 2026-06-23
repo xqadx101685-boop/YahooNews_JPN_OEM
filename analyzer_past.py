@@ -454,7 +454,7 @@ def analyze_article_single(text: str) -> Dict[str, str]:
     return default
 
 # ====== コメント要約用関数 ======
-def analyze_comment_summary(text: str) -> Dict[str, Any]:
+def analyze_comment_summary(text: str, target_company: str = "日産") -> Dict[str, Any]:
     default = {
         "nissan_product_neg": "なし",
         "summaries": ["-", "-", "-"],
@@ -465,7 +465,7 @@ def analyze_comment_summary(text: str) -> Dict[str, Any]:
     if not prompt_template:
         return default
     
-    prompt = prompt_template.replace("{TEXT_TO_ANALYZE}", text[:100000])
+    prompt = prompt_template.replace("{TEXT_TO_ANALYZE}", text[:100000]).replace("{TARGET_COMPANY}", target_company)
     
     schema = {
         "type": "object",
