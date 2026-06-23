@@ -204,7 +204,7 @@ def run_comment_collection(gc: gspread.Client, source_sheet_id: str, source_shee
             comment_cols, full_text_for_ai = fetch_comments_hybrid(url, max_limit)
             
             if comment_cols:
-                summary_data = summarizer_func(full_text_for_ai)
+                summary_data = summarizer_func(full_text_for_ai, target_company=target_company)
                 prod_neg = summary_data.get("nissan_product_neg", "N/A")
                 summary_combined = "\n\n".join(summary_data.get("summaries", [])) or "-"
                 ranking_combined = "\n".join(summary_data.get("topic_ranking", [])) or "-"
