@@ -464,8 +464,11 @@ def analyze_comment_summary(text: str, target_company: str = "日産") -> Dict[s
     prompt_template = load_comment_prompt()
     if not prompt_template:
         return default
+    # ─── ★ここから追加：カッコと直前のスペースを丸ごと削除する処理 ───
+    # 例: "日産 (みずほ...)" -> "日産"、 "トヨタ (スバル)" -> "トヨタ" に綺麗に変換されます
+    cleaned_company = re.sub(r'\s*\(.*?\)', '', target_company).strip()
     
-    prompt = prompt_template.replace("{TEXT_TO_ANALYZE}", text[:100000]).replace("{TARGET_COMPANY}", target_company)
+    prompt = prompt_template.replace("{TEXT_TO_ANALYZE}", text[:100000]).replace("{TARGET_COMPANY}", cleaned_company)
     
     schema = {
         "type": "object",
