@@ -68,10 +68,18 @@ ALL_PROMPT_FILES = [
 # ====== APIキー管理設定 ======
 AVAILABLE_API_KEYS = []
 # GOOGLE_API_KEY_1 ～ 5 をロード
+AVAILABLE_API_KEY_LABELS = []  # どの環境変数だったかも記録
+
 for i in range(1, 6):
-    key = os.environ.get(f"GOOGLE_API_KEY_{i}")
+    env_name = f"GOOGLE_API_KEY_{i}"
+    key = os.environ.get(env_name)
     if key:
+        # デバッグログ
+        print(f"[DEBUG] {env_name}: head={key[:8]}, len={len(key)}")
         AVAILABLE_API_KEYS.append(key)
+        AVAILABLE_API_KEY_LABELS.append(env_name)
+    else:
+        print(f"[DEBUG] {env_name} not set or empty")
 
 # フォールバック (番号なし)
 if not AVAILABLE_API_KEYS:
@@ -103,6 +111,9 @@ def get_current_gemini_client() -> Optional[genai.Client]:
     if not AVAILABLE_API_KEYS:
         return None
     api_key = AVAILABLE_API_KEYS[CURRENT_KEY_INDEX]
+    label = AVAILABLE_API_KEY_LABELS[CURRENT_KEY_INDEX]
+    print(f"[DEBUG] Using {label}: head={api_key[:8]}, len={len(api_key)} (index={CURRENT_KEY_INDEX})")
+
     return genai.Client(
         api_key=api_key, 
         http_options={'timeout': 6000000}
@@ -117,8 +128,10 @@ def rotate_api_key(reason="limit_reached"):
     old_index = CURRENT_KEY_INDEX
     CURRENT_KEY_INDEX = (CURRENT_KEY_INDEX + 1) % len(AVAILABLE_API_KEYS)
     REQUEST_COUNT_PER_KEY = 0
-    
-    print(f"    [Key Rotation] 理由:{reason} | Key#{old_index + 1} -> Key#{CURRENT_KEY_INDEX + 1} に切り替えます。")
+
+    old_label = AVAILABLE_API_KEY_LABELS[old_index]
+    new_label = AVAILABLE_API_KEY_LABELS[CURRENT_KEY_INDEX]
+    print(f"    [Key Rotation] 理由:{reason} | {old_label} -> {new_label} に切り替えます。")
 
 def increment_request_count():
     """ リクエスト回数をカウントし、上限を超えたらローテーションする """
