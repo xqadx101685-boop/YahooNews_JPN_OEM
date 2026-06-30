@@ -190,7 +190,7 @@ def run_comment_collection(gc: gspread.Client, source_sheet_id: str, source_shee
         is_target = False
         max_limit = 2000 
         if not category.startswith("その他") and item['count'] >= 30:
-            if target_company.startswith("日産") and item['count'] >= 100:
+            if target_company.startswith("日産") and item['count'] >= 60:
                 is_target, max_limit = True, 1500
             elif target_company.startswith("トヨタ") and item['count'] >= 100:
                 is_target, max_limit = True, 1500
