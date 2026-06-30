@@ -232,10 +232,16 @@ def run_comment_collection(gc: gspread.Client, source_sheet_id: str, source_shee
                     
                     if len(comment_chunks) > 1:
                         print(f"    > 残りのコメントを分割書き込み中...")
+
                         for j, chunk in enumerate(comment_chunks[1:]):
                             start_col = 9 + (j + 1) * chunk_size
-                            dest_ws.update([chunk], f"R{current_row_idx}C{start_col}", value_input_option='USER_ENTERED')
+                            dest_ws.update(
+                                range_name=f"R{current_row_idx}C{start_col}",
+                                values=[chunk],
+                                value_input_option='USER_ENTERED',
+                            )
                             time.sleep(1)
+
                 except Exception as e:
                     print(f"      ! 書き込みエラー: {e}")
 
