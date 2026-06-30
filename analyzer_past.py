@@ -1053,8 +1053,8 @@ def run_second_comment_pass(gc: gspread.Client):
         existing_row_idx = url_to_row_index.get(url)
         if existing_row_idx:
             dest_ws.update(
-                f"A{existing_row_idx}",
-                [row_data],
+                range_name=f"A{existing_row_idx}",
+                values=[row_data],
                 value_input_option="USER_ENTERED",
             )
             print(f"    > 既存行を更新しました。（行 {existing_row_idx}）")
