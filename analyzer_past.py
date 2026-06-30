@@ -1000,7 +1000,7 @@ def run_second_comment_pass(gc: gspread.Client):
         max_limit = 2000  # 安全の上限
 
         if not str(category).startswith("その他") and cnt > 30:
-            if str(target_company).startswith("日産") and cnt >= 100:
+            if str(target_company).startswith("日産") and cnt >= 60:
                 is_target, max_limit = True, 1500
             elif str(target_company).startswith("トヨタ") and cnt >= 100:
                 is_target, max_limit = True, 1500
@@ -1013,6 +1013,8 @@ def run_second_comment_pass(gc: gspread.Client):
             elif str(target_company).startswith("マツダ") and cnt >= 100:
                 is_target, max_limit = True, 1500
             elif str(target_company).startswith("三菱") and cnt >= 100:
+                is_target, max_limit = True, 1500
+            elif str(target_company).startswith("ダイハツ") and cnt >= 100:
                 is_target, max_limit = True, 1500
             elif str(nissan_neg_text).strip() not in ["", "なし", "N/A", "-"]:
                 is_target, max_limit = True, 1500
