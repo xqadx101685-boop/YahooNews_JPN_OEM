@@ -986,7 +986,7 @@ def run_second_comment_pass(gc: gspread.Client):
         diff = now - post_dt
 
         # ★ 5〜36時間経過した記事だけを対象にする
-        if not (timedelta(hours=5) <= diff < timedelta(hours=36)):
+        if not (timedelta(hours=5) <= diff < timedelta(hours=41)):
             continue
 
         # コメント数を数値化（Yahooシートの最新値）
