@@ -295,7 +295,7 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
     if not client:
         return None
     
-    if DEBUG_PRINT_COUNT < 2:
+    if DEBUG_PRINT_COUNT < 15:
         print("\n" + "="*50)
         print(f"【DEBUG: 送信プロンプト確認 ({DEBUG_PRINT_COUNT + 1}回目)】")
         print(prompt)
