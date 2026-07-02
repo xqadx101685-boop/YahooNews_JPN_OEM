@@ -31,7 +31,7 @@ def ensure_comments_sheet(sh: gspread.Spreadsheet):
     try:
         ws = sh.worksheet(COMMENTS_SHEET_NAME)
     except gspread.exceptions.WorksheetNotFound:
-        ws = sh.add_worksheet(title=COMMENTS_SHEET_NAME, rows="1000", cols="300")
+        ws = sh.add_worksheet(title=COMMENTS_SHEET_NAME, rows=1000, cols=300)
         headers = ["URL", "タイトル", "投稿日時", "ソース", "コメント数", "製品批判有無", "コメント要約(全体)", "話題ランキング(TOP5)"]
         for i in range(0, 240): 
             start = i * 10 + 1
