@@ -1031,7 +1031,7 @@ def run_second_comment_pass(gc: gspread.Client):
             continue
 
         # Gemini で再要約
-        summary_data = analyze_comment_summary(ai_text)
+        summary_data = analyze_comment_summary(ai_text, target_company=target_company)
         prod_neg = summary_data.get("nissan_product_neg", "N/A")
         summary_combined = "\n\n".join(summary_data.get("summaries", [])) or "-"
         ranking_combined = "\n".join(summary_data.get("topic_ranking", [])) or "-"
