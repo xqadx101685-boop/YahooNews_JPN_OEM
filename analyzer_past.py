@@ -295,7 +295,7 @@ def call_gemini_api(prompt: str, is_batch: bool = False, schema: dict = None) ->
     if not client:
         return None
     
-    if DEBUG_PRINT_COUNT < 15:
+    if DEBUG_PRINT_COUNT < 2:
         print("\n" + "="*50)
         print(f"【DEBUG: 送信プロンプト確認 ({DEBUG_PRINT_COUNT + 1}回目)】")
         print(prompt)
@@ -986,7 +986,7 @@ def run_second_comment_pass(gc: gspread.Client):
         diff = now - post_dt
 
         # ★ 5〜36時間経過した記事だけを対象にする
-        if not (timedelta(hours=5) <= diff < timedelta(hours=41)):
+        if not (timedelta(hours=5) <= diff < timedelta(hours=36)):
             continue
 
         # コメント数を数値化（Yahooシートの最新値）
