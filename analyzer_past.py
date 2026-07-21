@@ -656,7 +656,7 @@ def fetch_details_and_update_sheet(gc: gspread.Client):
         return
     data_rows = all_values[1:]
     now_jst = jst_now()
-    three_days_ago = now_jst - timedelta(hours=24)  # 過去24時間分のみコメント数更新
+    three_days_ago = now_jst - timedelta(hours=72)  # 過去72時間分のみコメント数更新
     
     for idx, data_row in enumerate(data_rows):
         if len(data_row) < len(YAHOO_SHEET_HEADERS):
