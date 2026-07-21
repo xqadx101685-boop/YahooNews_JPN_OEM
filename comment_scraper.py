@@ -206,6 +206,8 @@ def run_comment_collection(gc: gspread.Client, source_sheet_id: str, source_shee
                 is_target, max_limit = True, 1500
             elif target_company.startswith("ダイハツ") and item['count'] >= 100:
                 is_target, max_limit = True, 1500
+            elif target_company.startswith("BYD") and item['count'] >= 100:
+                is_target, max_limit = True, 1500
             elif str(nissan_neg_text).strip() not in ["", "なし", "N/A", "-"]:
                 is_target, max_limit = True, 1500
         
