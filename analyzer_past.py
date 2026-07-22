@@ -1016,6 +1016,8 @@ def run_second_comment_pass(gc: gspread.Client):
                 is_target, max_limit = True, 1500
             elif str(target_company).startswith("ダイハツ") and cnt >= 100:
                 is_target, max_limit = True, 1500
+            elif str(target_company).startswith("BYD") and cnt >= 100:
+                is_target, max_limit = True, 1500
             elif str(nissan_neg_text).strip() not in ["", "なし", "N/A", "-"]:
                 is_target, max_limit = True, 1500
 
