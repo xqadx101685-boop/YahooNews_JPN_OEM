@@ -722,24 +722,47 @@ def fetch_article_body_and_comments(base_url: str) -> Tuple[str, int, Optional[s
 # ====== メイン処理フロー ======
 
 # ★ 修正: open_spreadsheet_with_retry を使うように簡略化
+
+from gspread.exceptions import WorksheetNotFound, APIError
+
 def ensure_source_sheet(gc, max_retries=5):
-    # open_spreadsheet_with_retry に open_by_key 周りのリトライを任せる
     sh = open_spreadsheet_with_retry(gc, SOURCE_SPREADSHEET_ID, max_retries=max_retries)
 
-    try:
-        ws = sh.worksheet(SOURCE_SHEET_NAME)
-    except:
-        ws = sh.add_worksheet(
-            SOURCE_SHEET_NAME,
-            MAX_SHEET_ROWS_FOR_REPLACE,
-            len(YAHOO_SHEET_HEADERS)
-        )
-    
+    ws = None
+    for attempt in range(max_retries):
+        try:
+            ws = sh.worksheet(SOURCE_SHEET_NAME)
+            break  # 取得成功
+        except WorksheetNotFound:
+            # 無いときだけ作る
+            ws = sh.add_worksheet(
+                SOURCE_SHEET_NAME,
+                MAX_SHEET_ROWS_FOR_REPLACE,
+                len(YAHOO_SHEET_HEADERS)
+            )
+            break
+        except APIError as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            print(f"ensure_source_sheet: worksheet で APIError {status} / {e}")
+            if status in (500, 502, 503, 504):
+                wait = 10 * (attempt + 1)
+                print(f"  -> {wait}秒待機して再試行 ({attempt+1}/{max_retries}) ...")
+                time.sleep(wait)
+                continue
+            else:
+                raise
+
+    if ws is None:
+        raise RuntimeError("ensure_source_sheet: シート取得に失敗（リトライ上限）")
+
+    # ヘッダーはリトライ付きの update を使う方が安全
     if ws.row_values(1) != YAHOO_SHEET_HEADERS:
-        ws.update(
+        update_sheet_with_retry(
+            ws,
             range_name=f'A1:{gspread_util_col_to_letter(len(YAHOO_SHEET_HEADERS))}1',
             values=[YAHOO_SHEET_HEADERS]
         )
+
     return ws
 
 def fetch_details_and_update_sheet(gc: gspread.Client):
