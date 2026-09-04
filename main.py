@@ -192,35 +192,46 @@ def build_gspread_client() -> gspread.Client:
         raise RuntimeError(f"Google認証失敗: {e}")
 
 # ★ 追加: open_by_key 用の共通リトライ関数
+from requests.exceptions import ConnectionError as RequestsConnectionError
+from urllib3.exceptions import ProtocolError
+
 def open_spreadsheet_with_retry(
     gc: gspread.Client,
     key: str,
     max_retries: int = 5
 ) -> gspread.Spreadsheet:
-    """Googleスプレッドシートを 409 / 5xx エラー時にリトライしながら開く"""
+    """Googleスプレッドシートを 409 / 5xx / 接続系エラー時にリトライしながら開く"""
     for attempt in range(max_retries):
         try:
             return gc.open_by_key(key)
+
         except gspread.exceptions.APIError as e:
-            # ステータスコード取得（ない場合は None）
             status = getattr(getattr(e, "response", None), "status_code", None)
             msg = str(e)
 
-            # 409（Operation aborted）や 5xx は一時的なエラーとみなしてリトライ
             if status in (409, 500, 502, 503, 504) or "The operation was aborted" in msg:
                 wait = 10 * (attempt + 1)
                 print(
-                    f"  [Retry] open_by_key でエラー {status} / '{msg}'. "
+                    f"  [Retry] open_by_key で APIError {status} / '{msg}'. "
                     f"{wait}秒待機して再試行 ({attempt+1}/{max_retries}) ..."
                 )
                 time.sleep(wait)
                 continue
 
-            # それ以外（403/404など）は致命的とみなして即座に投げ直し
-            raise
+            raise  # 403/404などは即座に投げる
+
+        except (RequestsConnectionError, ProtocolError) as e:
+            # ネットワーク一時切断等はリトライ対象にする
+            wait = 10 * (attempt + 1)
+            print(
+                f"  [Retry] open_by_key で接続エラー '{e}'. "
+                f"{wait}秒待機して再試行 ({attempt+1}/{max_retries}) ..."
+            )
+            time.sleep(wait)
+            continue
 
     raise RuntimeError("スプレッドシートのオープンに失敗しました（リトライ上限到達）")
-
+    
 # ★ 追加: get_all_values 用の共通リトライ関数
 def get_all_values_with_retry(
     ws: gspread.Worksheet,
@@ -768,14 +779,31 @@ def ensure_source_sheet(gc, max_retries=5):
         try:
             ws = sh.worksheet(SOURCE_SHEET_NAME)
             break  # 取得成功
+
         except WorksheetNotFound:
-            # 無いときだけ作る
-            ws = sh.add_worksheet(
-                SOURCE_SHEET_NAME,
-                MAX_SHEET_ROWS_FOR_REPLACE,
-                len(YAHOO_SHEET_HEADERS)
-            )
-            break
+            # いきなり作らず、一度は add_worksheet を慎重に扱う
+            try:
+                ws = sh.add_worksheet(
+                    SOURCE_SHEET_NAME,
+                    MAX_SHEET_ROWS_FOR_REPLACE,
+                    len(YAHOO_SHEET_HEADERS)
+                )
+                print("ensure_source_sheet: 新規シート 'Yahoo' を作成しました。")
+                break
+
+            except APIError as e2:
+                status2 = getattr(getattr(e2, "response", None), "status_code", None)
+                msg2 = str(e2)
+
+                # 「名前が重複しています」の 400 は、既に存在しているとみなす
+                if status2 == 400 and "already exists" in msg2:
+                    print("ensure_source_sheet: 'Yahoo' は既に存在していました。worksheet で再取得します。")
+                    ws = sh.worksheet(SOURCE_SHEET_NAME)
+                    break
+
+                # それ以外の 400 は想定外なので投げ直す
+                raise
+
         except APIError as e:
             status = getattr(getattr(e, "response", None), "status_code", None)
             print(f"ensure_source_sheet: worksheet で APIError {status} / {e}")
