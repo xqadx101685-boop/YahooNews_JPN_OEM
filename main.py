@@ -221,6 +221,41 @@ def open_spreadsheet_with_retry(
 
     raise RuntimeError("スプレッドシートのオープンに失敗しました（リトライ上限到達）")
 
+# ★ 追加: get_all_values 用の共通リトライ関数
+def get_all_values_with_retry(
+    ws: gspread.Worksheet,
+    max_retries: int = 5,
+    **kwargs
+) -> list[list[str]]:
+    """
+    ws.get_all_values() を 409 / 5xx / 'The service is currently unavailable' などで
+    リトライしながら実行するラッパー。
+    kwargs は get_all_values の引数にそのまま渡す。
+    """
+    from gspread.exceptions import APIError  # ここで import してもOK
+
+    for attempt in range(max_retries):
+        try:
+            return ws.get_all_values(**kwargs)
+        except APIError as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            msg = str(e)
+
+            if status in (409, 500, 502, 503, 504) or \
+               "The service is currently unavailable" in msg or \
+               "503" in msg:
+                wait = 10 * (attempt + 1)
+                print(
+                    f"  [Retry] get_all_values で APIError {status} / '{msg}'. "
+                    f"{wait}秒待機して再試行 ({attempt+1}/{max_retries}) ..."
+                )
+                time.sleep(wait)
+                continue
+
+            raise
+
+    raise RuntimeError("get_all_values に失敗しました（リトライ上限到達）")
+
 def load_keywords(filename: str) -> List[str]:
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -772,7 +807,10 @@ def fetch_details_and_update_sheet(gc: gspread.Client):
         ws = sh.worksheet(SOURCE_SHEET_NAME)
     except:
         return
-    all_values = ws.get_all_values(value_render_option='UNFORMATTED_VALUE')
+    all_values = get_all_values_with_retry(
+        ws,
+        value_render_option='UNFORMATTED_VALUE'
+    )
     if len(all_values) <= 1:
         return
     data_rows = all_values[1:]
@@ -955,7 +993,8 @@ def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
         ws = sh.worksheet(SOURCE_SHEET_NAME)
     except:
         return
-    data_rows = ws.get_all_values()[1:]
+    rows = get_all_values_with_retry(ws)
+    data_rows = rows[1:]
     if not data_rows:
         return
     print("\n=====  ステップ４ Gemini分析 (スロースタート版) =====")
@@ -1116,10 +1155,12 @@ def main():
         # === 24時間以内フィルタ ここまで ===
 
         ws = ensure_source_sheet(gc)
+        rows = get_all_values_with_retry(ws)
         exist = set(
-            str(r[0]) for r in ws.get_all_values()[1:]
+            str(r[0]) for r in rows[1:]
             if len(r) > 0 and str(r[0]).startswith("http")
         )
+
         new = [
             [d['URL'], d['タイトル'], d['投稿日時'], d['ソース']]
             for d in data if d['URL'] not in exist
