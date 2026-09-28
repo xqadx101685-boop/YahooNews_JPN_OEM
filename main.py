@@ -609,20 +609,26 @@ def get_yahoo_news_with_selenium(keyword: str) -> list[dict]:
         )
     except:
         return []
+
+    # 検索ページを開く
     driver.get(
         f"https://news.yahoo.co.jp/search?p={keyword}&ei=utf-8"
         f"&categories=domestic,world,business,it,science,life,local"
     )
+
+    # 記事リンク a[data-cl-params*='_cl_link:title'] が出るまで待つ
     try:
         WebDriverWait(driver, 20).until(
             EC.visibility_of_element_located(
-                (By.CSS_SELECTOR, "li[class*='sc-1u4589e-0']")
+                (By.CSS_SELECTOR, "a[data-cl-params*='_cl_link:title']")
             )
         )
     except:
+        # 見つからなくても一応ページソースは見る
         pass
     time.sleep(3)
 
+    # 「もっと見る」ボタンをクリック（旧ロジックのまま）
     MAX_LOAD_COUNT = 3
     for i in range(MAX_LOAD_COUNT):
         try:
@@ -638,56 +644,80 @@ def get_yahoo_news_with_selenium(keyword: str) -> list[dict]:
             time.sleep(1)
             driver.execute_script("arguments[0].click();", more_button)
             print(f"  - 「もっと見る」ボタン押下 ({i+1}/{MAX_LOAD_COUNT})")
-            time.sleep(3) 
+            time.sleep(3)
         except:
             break
 
     soup = BeautifulSoup(driver.page_source, "html.parser")
     driver.quit()
+
     data = []
     today = jst_now()
-    for art in soup.find_all("li", class_=re.compile("sc-1u4589e-0")):
+
+    # 記事リンクを a[data-cl-params*='_cl_link:title'] で取得
+    for a_tag in soup.select("a[data-cl-params*='_cl_link:title']"):
         try:
-            title = art.find("div", class_=re.compile("sc-3ls169-0")).text.strip()
-            link = art.find("a", href=True)["href"]
+            link = a_tag.get("href") or ""
             if not link.startswith("https://news.yahoo.co.jp/articles/"):
+                # 記事以外（トピックなど）はスキップ
                 continue
-            date_str = art.find("time").text.strip() if art.find("time") else ""
-            src_div = art.find("div", class_=re.compile("sc-n3vj8g-0"))
+
+            # タイトル取得:
+            # div.newsFeed_item_body 内の最初の「タイトルっぽい div」を使う
+            body_div = a_tag.find("div", class_=re.compile(r"newsFeed_item_body"))
+            title = ""
+            if body_div:
+                # 1番目のタイトル行（クラスは頻繁に変わるため、最初の div を採用）
+                title_div = body_div.find("div")
+                if title_div:
+                    title = title_div.get_text(strip=True)
+            if not title:
+                # フォールバック：aタグ全体のテキストから先頭行をタイトルとみなす
+                title = a_tag.get_text(" ", strip=True).split("\n")[0]
+
+            # 投稿日時（<time>タグのテキスト）
+            time_tag = a_tag.find("time")
+            date_str = time_tag.get_text(strip=True) if time_tag else ""
+
+            # ソース（配信元）:
+            # time タグの親 div から span を拾い、コメント数・カテゴリ以外を候補に
             source = ""
-            if src_div:
-                sub = src_div.find("div", class_=re.compile("sc-110wjhy-8"))
-                if sub:
-                    cands = [
-                        s.text.strip()
-                        for s in sub.find_all("span")
-                        if not s.find("svg") and
-                           not re.match(
-                               r'\d{1,2}/\d{1,2}.*\d{2}:\d{2}',
-                               s.text.strip()
-                           )
-                    ]
-                    if cands:
-                        source = max(cands, key=len)
+            if time_tag:
+                parent_div = time_tag.find_parent("div")
+                if parent_div:
+                    spans = parent_div.find_all("span")
+                    # 例: [コメント数, "時事通信", "株式"]
+                    for s in spans:
+                        txt = s.get_text(strip=True)
+                        # 数字だけ（コメント数）やカテゴリっぽい短い単語を除外して
+                        if txt and not txt.isdigit():
+                            source = txt
+                            break
+
             fmt_date = date_str
             try:
                 dt = parse_post_date(date_str, today)
                 if dt:
                     fmt_date = format_datetime(dt)
                 else:
+                    # "(月)" などの曜日だけ削るフォールバック
                     fmt_date = re.sub(
-                        r"\([月火水木金土日]\)$", "", date_str                         
+                        r"$[月火水木金土日]$$", "", date_str
                     ).strip()
             except:
                 pass
+
             data.append({
                 "URL": link,
                 "タイトル": title,
                 "投稿日時": fmt_date,
                 "ソース": source
             })
-        except:
+        except Exception as e:
+            # 1件ごとのパースエラーは無視して次へ
+            # print(f"[DEBUG] parse error: {e}")
             continue
+
     print(f"  取得件数: {len(data)}")
     return data
 
