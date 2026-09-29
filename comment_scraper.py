@@ -20,11 +20,11 @@ REQ_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb
 MAX_SELENIUM_PAGES = 10 
 TZ_JST = timezone(timedelta(hours=9)) # 修正: JST定義
 
-# YahooニュースのHTML構造（クラス名）
-CLS_ARTICLE = "sc-169yn8p-3" # コメント枠
-CLS_USER_NAME = "sc-169yn8p-7" # 投稿者名
-CLS_BODY = "sc-169yn8p-10"    # 本文
-CLS_TIME = "sc-169yn8p-9"     # 投稿日時
+# YahooニュースのHTML構造（クラス名）★ここを新クラスに更新
+CLS_ARTICLE   = "sc-93daaf6c-3"   # コメント1件を囲む <article> のクラス
+CLS_USER_NAME = "sc-93daaf6c-7"   # 投稿者名 <a> のクラス
+CLS_BODY      = "sc-93daaf6c-10"  # コメント本文 <p> のクラス
+CLS_TIME      = "sc-93daaf6c-9"   # 投稿日時リンク <a> のクラス（今は未使用）
 
 def ensure_comments_sheet(sh: gspread.Spreadsheet):
     """ Commentsシートがなければ作成し、ヘッダーを設定する """
