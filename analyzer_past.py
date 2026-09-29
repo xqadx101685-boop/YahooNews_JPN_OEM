@@ -493,27 +493,41 @@ def get_yahoo_news_with_selenium(keyword: str) -> list[dict]:
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument(f"user-agent={REQ_HEADERS['User-Agent']}")
     opts.add_argument("--disable-blink-features=AutomationControlled")
+
     try:
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=opts)
-    except Exception:
+        driver = webdriver.Chrome(
+            service=Service(ChromeDriverManager().install()),
+            options=opts
+        )
+    except:
         return []
+
+    # 検索ページを開く
     driver.get(
-        f"https://news.yahoo.co.jp/search?p={keyword}"
-        "&ei=utf-8&categories=domestic,world,business,it,science,life,local"
+        f"https://news.yahoo.co.jp/search?p={keyword}&ei=utf-8"
+        f"&categories=domestic,world,business,it,science,life,local"
     )
+
+    # 記事リンク a[data-cl-params*='_cl_link:title'] が出るまで待つ
     try:
         WebDriverWait(driver, 20).until(
-            EC.visibility_of_element_located((By.CSS_SELECTOR, "li[class*='sc-1u4589e-0']"))
+            EC.visibility_of_element_located(
+                (By.CSS_SELECTOR, "a[data-cl-params*='_cl_link:title']")
+            )
         )
-    except Exception:
+    except:
+        # 見つからなくても一応ページソースは見る
         pass
     time.sleep(3)
 
+    # 「もっと見る」ボタンをクリック
     MAX_LOAD_COUNT = 3
     for i in range(MAX_LOAD_COUNT):
         try:
             more_button = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, "//button[span[contains(text(), 'もっと見る')]]"))
+                EC.presence_of_element_located(
+                    (By.XPATH, "//button[span[contains(text(), 'もっと見る')]]")
+                )
             )
             driver.execute_script(
                 "arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});",
@@ -523,44 +537,106 @@ def get_yahoo_news_with_selenium(keyword: str) -> list[dict]:
             driver.execute_script("arguments[0].click();", more_button)
             print(f"  - 「もっと見る」ボタン押下 ({i+1}/{MAX_LOAD_COUNT})")
             time.sleep(3)
-        except Exception:
+        except:
             break
 
     soup = BeautifulSoup(driver.page_source, "html.parser")
     driver.quit()
+
     data = []
     today = jst_now()
-    for art in soup.find_all("li", class_=re.compile("sc-1u4589e-0")):
+
+    # 記事リンクを a[data-cl-params*='_cl_link:title'] で取得
+    for a_tag in soup.select("a[data-cl-params*='_cl_link:title']"):
         try:
-            title = art.find("div", class_=re.compile("sc-3ls169-0")).text.strip()
-            link = art.find("a", href=True)["href"]
+            link = a_tag.get("href") or ""
             if not link.startswith("https://news.yahoo.co.jp/articles/"):
+                # 記事以外（トピックなど）はスキップ
                 continue
-            date_str = art.find("time").text.strip() if art.find("time") else ""
-            src_div = art.find("div", class_=re.compile("sc-n3vj8g-0"))
+
+            # =========================
+            # タイトル取得ロジック（改良版）
+            # =========================
+            title = ""
+
+            # 1) 文字情報ブロック（サムネイルの隣）からタイトルを取る
+            info_block = a_tag.find("div", class_=re.compile(r"sc-c510c024-0"))
+            if info_block:
+                # info_block 内の最初の div がタイトル行
+                title_div = info_block.find("div")
+                if title_div:
+                    title = title_div.get_text(strip=True)
+
+            # 2) フォールバック: タイトルっぽい div を順に探す（動画時間などは除外）
+            if not title:
+                for div in a_tag.find_all("div"):
+                    t = div.get_text(strip=True)
+                    if not t:
+                        continue
+
+                    # 「1:12」など「数字:数字」だけの時間表記は除外
+                    if re.fullmatch(r"\d{1,2}:\d{2}", t):
+                        continue
+
+                    # あまりに短いテキストは除外（カテゴリ名など）
+                    if len(t) < 5:
+                        continue
+
+                    title = t
+                    break
+
+            # 3) 最後の最後のフォールバック
+            if not title:
+                title = a_tag.get_text(" ", strip=True).split("\n")[0]
+
+            # =========================
+            # 投稿日時の取得
+            # =========================
+            time_tag = a_tag.find("time")
+            date_str = time_tag.get_text(strip=True) if time_tag else ""
+
+            # =========================
+            # ソース（配信元）の取得
+            # =========================
             source = ""
-            if src_div:
-                sub = src_div.find("div", class_=re.compile("sc-110wjhy-8"))
-                if sub:
-                    cands = [
-                        s.text.strip()
-                        for s in sub.find_all("span")
-                        if not s.find("svg") and not re.match(r'\d{1,2}/\d{1,2}.*\d{2}:\d{2}', s.text.strip())
-                    ]
-                    if cands:
-                        source = max(cands, key=len)
+            if time_tag:
+                parent_div = time_tag.find_parent("div")
+                if parent_div:
+                    spans = parent_div.find_all("span")
+                    # 例: [コメント数, "テレQ（TVQ九州放送）", "福岡"]
+                    for s in spans:
+                        txt = s.get_text(strip=True)
+                        # 数字だけ（コメント数）などは除外
+                        if not txt or txt.isdigit():
+                            continue
+                        source = txt
+                        break
+
+            # 投稿日時の整形
             fmt_date = date_str
             try:
                 dt = parse_post_date(date_str, today)
                 if dt:
                     fmt_date = format_datetime(dt)
                 else:
-                    fmt_date = re.sub(r"\([月火水木金土日]\)$", "", date_str).strip()
-            except Exception:
+                    # "(月)" などの曜日だけ削るフォールバック
+                    fmt_date = re.sub(
+                        r"$[月火水木金土日]$$", "", date_str
+                    ).strip()
+            except:
                 pass
-            data.append({"URL": link, "タイトル": title, "投稿日時": fmt_date, "ソース": source})
+
+            data.append({
+                "URL": link,
+                "タイトル": title,
+                "投稿日時": fmt_date,
+                "ソース": source
+            })
+
         except Exception:
+            # 1件ごとのパースエラーは無視して次へ
             continue
+
     print(f"  取得件数: {len(data)}")
     return data
 
