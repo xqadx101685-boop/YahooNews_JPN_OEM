@@ -602,6 +602,7 @@ def get_yahoo_news_with_selenium(keyword: str) -> list[dict]:
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument(f"user-agent={REQ_HEADERS['User-Agent']}")
     opts.add_argument("--disable-blink-features=AutomationControlled")
+
     try:
         driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()),
@@ -628,7 +629,7 @@ def get_yahoo_news_with_selenium(keyword: str) -> list[dict]:
         pass
     time.sleep(3)
 
-    # 「もっと見る」ボタンをクリック（旧ロジックのまま）
+    # 「もっと見る」ボタンをクリック
     MAX_LOAD_COUNT = 3
     for i in range(MAX_LOAD_COUNT):
         try:
@@ -662,38 +663,65 @@ def get_yahoo_news_with_selenium(keyword: str) -> list[dict]:
                 # 記事以外（トピックなど）はスキップ
                 continue
 
-            # タイトル取得:
-            # div.newsFeed_item_body 内の最初の「タイトルっぽい div」を使う
-            body_div = a_tag.find("div", class_=re.compile(r"newsFeed_item_body"))
+            # =========================
+            # タイトル取得ロジック（改良版）
+            # =========================
             title = ""
-            if body_div:
-                # 1番目のタイトル行（クラスは頻繁に変わるため、最初の div を採用）
-                title_div = body_div.find("div")
+
+            # 1) 文字情報ブロック（サムネイルの隣）からタイトルを取る
+            info_block = a_tag.find("div", class_=re.compile(r"sc-c510c024-0"))
+            if info_block:
+                # info_block 内の最初の div がタイトル行
+                title_div = info_block.find("div")
                 if title_div:
                     title = title_div.get_text(strip=True)
+
+            # 2) フォールバック: タイトルっぽい div を順に探す（動画時間などは除外）
             if not title:
-                # フォールバック：aタグ全体のテキストから先頭行をタイトルとみなす
+                for div in a_tag.find_all("div"):
+                    t = div.get_text(strip=True)
+                    if not t:
+                        continue
+
+                    # 「1:12」など「数字:数字」だけの時間表記は除外
+                    if re.fullmatch(r"\d{1,2}:\d{2}", t):
+                        continue
+
+                    # あまりに短いテキストは除外（カテゴリ名など）
+                    if len(t) < 5:
+                        continue
+
+                    title = t
+                    break
+
+            # 3) 最後の最後のフォールバック
+            if not title:
                 title = a_tag.get_text(" ", strip=True).split("\n")[0]
 
-            # 投稿日時（<time>タグのテキスト）
+            # =========================
+            # 投稿日時の取得
+            # =========================
             time_tag = a_tag.find("time")
             date_str = time_tag.get_text(strip=True) if time_tag else ""
 
-            # ソース（配信元）:
-            # time タグの親 div から span を拾い、コメント数・カテゴリ以外を候補に
+            # =========================
+            # ソース（配信元）の取得
+            # =========================
             source = ""
             if time_tag:
                 parent_div = time_tag.find_parent("div")
                 if parent_div:
                     spans = parent_div.find_all("span")
-                    # 例: [コメント数, "時事通信", "株式"]
+                    # 例: [コメント数, "テレQ（TVQ九州放送）", "福岡"]
                     for s in spans:
                         txt = s.get_text(strip=True)
-                        # 数字だけ（コメント数）やカテゴリっぽい短い単語を除外して
-                        if txt and not txt.isdigit():
-                            source = txt
-                            break
+                        # 数字だけ（コメント数）などは除外
+                        if not txt or txt.isdigit():
+                            continue
+                        source = txt
+                        break
 
+            # 投稿日時の整形
             fmt_date = date_str
             try:
                 dt = parse_post_date(date_str, today)
@@ -713,9 +741,9 @@ def get_yahoo_news_with_selenium(keyword: str) -> list[dict]:
                 "投稿日時": fmt_date,
                 "ソース": source
             })
-        except Exception as e:
+
+        except Exception:
             # 1件ごとのパースエラーは無視して次へ
-            # print(f"[DEBUG] parse error: {e}")
             continue
 
     print(f"  取得件数: {len(data)}")
