@@ -53,7 +53,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          # jq が必要なのでインストール
+          # jq が必要なのでインストール（既に入っていてもOK）
           sudo apt-get update -y
           sudo apt-get install -y jq
 
@@ -61,10 +61,8 @@ jobs:
           CURRENT_JST_DATE="${{ steps.time.outputs.jst_date }}"
           REPO="${{ github.repository }}"
 
-          # この Workflow のファイル名に合わせて変更してください
-          # 例: この YAML ファイルが .github/workflows/yahoo-news-scraper.yml なら、
-          # WORKFLOW_FILE="yahoo-news-scraper.yml"
-          WORKFLOW_FILE="yahoo-news-scraper.yml"
+          # この Workflow のファイル名 (.github/workflows/main.yml)
+          WORKFLOW_FILE="main.yml"
 
           echo "Current JST date: $CURRENT_JST_DATE, hour: $CURRENT_JST_HOUR"
 
@@ -76,8 +74,8 @@ jobs:
 
           FOUND_SUCCESS=0
 
-          # 各 run の created_at と conclusion を確認
-          runs=$(jq -c '.workflow_runs[] | {created_at, conclusion}' runs.json)
+          # workflow_runs が無い場合でも落ちないように // [] を追加
+          runs=$(jq -c '.workflow_runs // [] | .[] | {created_at, conclusion}' runs.json)
 
           # while をサブシェルにしない形で回す
           while IFS= read -r row; do
@@ -119,7 +117,7 @@ jobs:
 
       # analyzer_past.py は JST 05:00〜05:59 かつ「同時間に成功済みがない場合だけ」動かす
       - name: Run Past Analyzer (Past 4 Days)
-        if: steps.check_previous.outputs.skip != 'true' && steps.time.outputs.jst_hour == '05'
+        if: steps.check_previous.outputs.skip != 'true' && steps.time.outputs.jst_hour == '08'
         run: |
           python -u analyzer_past.py
 
