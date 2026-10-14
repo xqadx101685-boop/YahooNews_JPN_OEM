@@ -117,7 +117,7 @@ jobs:
 
       # analyzer_past.py は JST 05:00〜05:59 かつ「同時間に成功済みがない場合だけ」動かす
       - name: Run Past Analyzer (Past 4 Days)
-        if: steps.check_previous.outputs.skip != 'true' && steps.time.outputs.jst_hour == '08'
+        if: steps.check_previous.outputs.skip != 'true' && steps.time.outputs.jst_hour == '05'
         run: |
           python -u analyzer_past.py
 
