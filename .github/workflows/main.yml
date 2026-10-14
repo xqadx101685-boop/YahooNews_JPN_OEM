@@ -47,8 +47,11 @@ jobs:
           echo "jst_date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
           echo "Current JST time: $(date +'%Y-%m-%d %H:%M:%S')"
 
-      # 同じ JST 時・日付に success な workflow_dispatch 実行があればスキップフラグを立てる
-      - name: Check previous successful run in same JST hour
+      # 同じ JST 時・日付に
+      #   - success で完了した run
+      #   - in_progress / queued の実行中 run
+      # があればスキップフラグを立てる
+      - name: Check previous successful or running run in same JST hour
         id: check_previous
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -60,62 +63,92 @@ jobs:
           CURRENT_JST_HOUR="${{ steps.time.outputs.jst_hour }}"
           CURRENT_JST_DATE="${{ steps.time.outputs.jst_date }}"
           REPO="${{ github.repository }}"
+          CURRENT_RUN_ID="${{ github.run_id }}"
 
           # この Workflow のファイル名 (.github/workflows/main.yml)
           WORKFLOW_FILE="main.yml"
 
           echo "Current JST date: $CURRENT_JST_DATE, hour: $CURRENT_JST_HOUR"
+          echo "Current run id: $CURRENT_RUN_ID"
 
-          # 過去の workflow_dispatch & completed を取得（最大30件程度見れば十分）
+          # 過去の workflow_dispatch 実行を取得（completed / in_progress / queued を全部見る）
           curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
                -H "Accept: application/vnd.github+json" \
-               "https://api.github.com/repos/${REPO}/actions/workflows/${WORKFLOW_FILE}/runs?event=workflow_dispatch&status=completed&per_page=30" \
+               "https://api.github.com/repos/${REPO}/actions/workflows/${WORKFLOW_FILE}/runs?event=workflow_dispatch&per_page=50" \
                > runs.json
 
-          FOUND_SUCCESS=0
+          echo "=== Raw runs.json (first 500 chars) ==="
+          head -c 500 runs.json || true
+          echo
+          echo "======================================="
+
+          FOUND_BLOCKING_RUN=0
 
           # workflow_runs が無い場合でも落ちないように // [] を追加
-          runs=$(jq -c '.workflow_runs // [] | .[] | {created_at, conclusion}' runs.json)
+          runs=$(jq -c '.workflow_runs // [] | .[] | {id, status, conclusion, created_at}' runs.json)
 
           # while をサブシェルにしない形で回す
           while IFS= read -r row; do
-            CREATED_AT=$(echo "$row" | jq -r '.created_at')   # UTC (例: 2024-09-01T20:13:00Z)
-            CONCLUSION=$(echo "$row" | jq -r '.conclusion')   # success / failure / cancelled 等
+            RUN_ID=$(echo "$row"   | jq -r '.id')
+            STATUS=$(echo "$row"   | jq -r '.status')       # completed / in_progress / queued / 等
+            CONCLUSION=$(echo "$row" | jq -r '.conclusion') # success / failure / cancelled / null 等
+            CREATED_AT=$(echo "$row" | jq -r '.created_at') # UTC (例: 2024-09-01T20:13:00Z)
 
-            # スキップ判定に使うのは success のみ
-            if [ "$CONCLUSION" != "success" ]; then
+            # 自分自身の run は除外（常に in_progress なのでこれを見てしまうと毎回スキップになる）
+            if [ "$RUN_ID" = "$CURRENT_RUN_ID" ]; then
               continue
             fi
 
-            # UTC → JST に変換
+            # completed の場合 → success 以外はスキップ条件に含めない
+            if [ "$STATUS" = "completed" ] && [ "$CONCLUSION" != "success" ]; then
+              continue
+            fi
+
+            # 実行中扱いとするステータス: in_progress / queued
+            # completed+success も含める（成功した過去実行）
+            if [ "$STATUS" != "in_progress" ] && [ "$STATUS" != "queued" ] && ! { [ "$STATUS" = "completed" ] && [ "$CONCLUSION" = "success" ]; }; then
+              # 上記 3パターン以外は無視
+              continue
+            fi
+
+            # ここまで来たら:
+            #   - completed & success
+            #   - in_progress
+            #   - queued
+            # のいずれか
+
+            # UTC → JST に変換して、日付と時を取り出す
             TS=$(date -d "$CREATED_AT" +%s)
             RUN_JST_HOUR=$(TZ=Asia/Tokyo date -d "@$TS" +'%H')
             RUN_JST_DATE=$(TZ=Asia/Tokyo date -d "@$TS" +'%Y-%m-%d')
 
-            echo "Found run: created_at(UTC)=$CREATED_AT, JST=$RUN_JST_DATE $RUN_JST_HOUR:00, conclusion=$CONCLUSION"
+            echo "Candidate run: id=$RUN_ID, status=$STATUS, conclusion=$CONCLUSION, created_at(UTC)=$CREATED_AT, JST=$RUN_JST_DATE $RUN_JST_HOUR:00"
 
             # 日付と時が一致するかどうか
             if [ "$RUN_JST_DATE" = "$CURRENT_JST_DATE" ] && [ "$RUN_JST_HOUR" = "$CURRENT_JST_HOUR" ]; then
-              FOUND_SUCCESS=1
+              echo "Found blocking run in the same JST hour (success or running)."
+              FOUND_BLOCKING_RUN=1
               break
             fi
           done <<< "$runs"
 
-          if [ "$FOUND_SUCCESS" -eq 1 ]; then
-            echo "Same JST hour already has a successful run. Skipping this execution."
+          if [ "$FOUND_BLOCKING_RUN" -eq 1 ]; then
+            echo "Same JST hour already has a successful or running run. Skipping this execution."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
-            echo "No successful run in the same JST hour. Proceeding."
+            echo "No successful or running run in the same JST hour. Proceeding."
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # main.py はいつでも実行（ただし同時間に成功済みならスキップ）
+      # main.py はいつでも実行
+      # ただし「同時間帯に success 済み or 実行中 run」がある場合はスキップ
       - name: Run Main Scraper (Latest News & Comments)
         if: steps.check_previous.outputs.skip != 'true'
         run: |
           python -u main.py
 
-      # analyzer_past.py は JST 05:00〜05:59 かつ「同時間に成功済みがない場合だけ」動かす
+      # analyzer_past.py は JST 05:00〜05:59 かつ
+      # 「同時間帯に success 済み or 実行中 run」がない場合だけ動かす
       - name: Run Past Analyzer (Past 4 Days)
         if: steps.check_previous.outputs.skip != 'true' && steps.time.outputs.jst_hour == '05'
         run: |
