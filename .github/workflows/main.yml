@@ -99,36 +99,31 @@ jobs:
               continue
             fi
 
-            # completed の場合 → success 以外はスキップ条件に含めない
-            if [ "$STATUS" = "completed" ] && [ "$CONCLUSION" != "success" ]; then
-              continue
-            fi
-
-            # 実行中扱いとするステータス: in_progress / queued
-            # completed+success も含める（成功した過去実行）
-            if [ "$STATUS" != "in_progress" ] && [ "$STATUS" != "queued" ] && ! { [ "$STATUS" = "completed" ] && [ "$CONCLUSION" = "success" ]; }; then
-              # 上記 3パターン以外は無視
-              continue
-            fi
-
-            # ここまで来たら:
+            # ここで「ブロック対象のステータスかどうか」を判定
+            # ブロック対象:
             #   - completed & success
             #   - in_progress
             #   - queued
-            # のいずれか
+            if [ "$STATUS" = "completed" ] && [ "$CONCLUSION" = "success" ] \
+               || [ "$STATUS" = "in_progress" ] \
+               || [ "$STATUS" = "queued" ]; then
 
-            # UTC → JST に変換して、日付と時を取り出す
-            TS=$(date -d "$CREATED_AT" +%s)
-            RUN_JST_HOUR=$(TZ=Asia/Tokyo date -d "@$TS" +'%H')
-            RUN_JST_DATE=$(TZ=Asia/Tokyo date -d "@$TS" +'%Y-%m-%d')
+              # UTC → JST に変換して、日付と時を取り出す
+              TS=$(date -d "$CREATED_AT" +%s)
+              RUN_JST_HOUR=$(TZ=Asia/Tokyo date -d "@$TS" +'%H')
+              RUN_JST_DATE=$(TZ=Asia/Tokyo date -d "@$TS" +'%Y-%m-%d')
 
-            echo "Candidate run: id=$RUN_ID, status=$STATUS, conclusion=$CONCLUSION, created_at(UTC)=$CREATED_AT, JST=$RUN_JST_DATE $RUN_JST_HOUR:00"
+              echo "Candidate run: id=$RUN_ID, status=$STATUS, conclusion=$CONCLUSION, created_at(UTC)=$CREATED_AT, JST=$RUN_JST_DATE $RUN_JST_HOUR:00"
 
-            # 日付と時が一致するかどうか
-            if [ "$RUN_JST_DATE" = "$CURRENT_JST_DATE" ] && [ "$RUN_JST_HOUR" = "$CURRENT_JST_HOUR" ]; then
-              echo "Found blocking run in the same JST hour (success or running)."
-              FOUND_BLOCKING_RUN=1
-              break
+              # 日付と時が一致するかどうか
+              if [ "$RUN_JST_DATE" = "$CURRENT_JST_DATE" ] && [ "$RUN_JST_HOUR" = "$CURRENT_JST_HOUR" ]; then
+                echo "Found blocking run in the same JST hour (success or running)."
+                FOUND_BLOCKING_RUN=1
+                break
+              fi
+            else
+              # ブロック対象でないステータスは無視
+              continue
             fi
           done <<< "$runs"
 
