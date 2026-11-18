@@ -16,8 +16,8 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from .webdriver.support.ui import WebDriverWait
+from .webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 
 # --- Gemini API 関連 (v1.0 SDK) ---
@@ -592,8 +592,13 @@ def analyze_comment_summary(text: str, target_company: str = "日産") -> Dict[s
     return result if result else default
 
 # ====== スクレイピング関数群 ======
+from selenium.common.exceptions import TimeoutException
+
+MAX_SELENIUM_RETRIES = 3  # Seleniumでの検索ページ取得リトライ回数
+
 def get_yahoo_news_with_selenium(keyword: str) -> list[dict]:
     print(f"  Yahoo!ニュース検索: {keyword}")
+
     opts = Options()
     opts.add_argument("--headless=new")
     opts.add_argument("--disable-gpu")
@@ -603,59 +608,101 @@ def get_yahoo_news_with_selenium(keyword: str) -> list[dict]:
     opts.add_argument(f"user-agent={REQ_HEADERS['User-Agent']}")
     opts.add_argument("--disable-blink-features=AutomationControlled")
 
-    try:
-        driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
-            options=opts
-        )
-    except:
-        return []
-
-    # 検索ページを開く
-    driver.get(
+    search_url = (
         f"https://news.yahoo.co.jp/search?p={keyword}&ei=utf-8"
         f"&categories=domestic,world,business,it,science,life,local"
     )
 
-    # 記事リンク a[data-cl-params*='_cl_link:title'] が出るまで待つ
-    try:
-        WebDriverWait(driver, 20).until(
-            EC.visibility_of_element_located(
-                (By.CSS_SELECTOR, "a[data-cl-params*='_cl_link:title']")
-            )
-        )
-    except:
-        # 見つからなくても一応ページソースは見る
-        pass
-    time.sleep(3)
+    driver = None
+    success = False
 
-    # 「もっと見る」ボタンをクリック
-    MAX_LOAD_COUNT = 3
-    for i in range(MAX_LOAD_COUNT):
+    for attempt in range(MAX_SELENIUM_RETRIES):
+        # 1回目以降は「リトライ中」と表示
+        if attempt > 0:
+            wait = 5 * attempt  # 例: 5秒, 10秒, 15秒…
+            print(f"  [Retry] Seleniumで検索ページ取得再試行 ({attempt+1}/{MAX_SELENIUM_RETRIES})")
+            time.sleep(wait)
+
         try:
-            more_button = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located(
-                    (By.XPATH, "//button[span[contains(text(), 'もっと見る')]]")
+            # 毎回新しいドライバを立てる方が安全
+            driver = webdriver.Chrome(
+                service=Service(ChromeDriverManager().install()),
+                options=opts
+            )
+            # ページロードタイムアウトを明示的に設定（必要に応じて調整）
+            driver.set_page_load_timeout(40)
+
+            # 検索ページを開く
+            driver.get(search_url)
+
+            success = True
+            break  # 正常に開けたのでループを抜ける
+
+        except TimeoutException:
+            print("  !! driver.get がタイムアウトしました。リトライします。")
+            if driver:
+                driver.quit()
+                driver = None
+            # ループ継続（attempt+1 回目へ）
+
+        except Exception as e:
+            print(f"  !! driver.get で予期せぬエラー: {e}")
+            if driver:
+                driver.quit()
+                driver = None
+            # この場合は致命的とみなして終了
+            return []
+
+    # すべての試行が失敗した場合は、このキーワードの取得を諦める
+    if not success:
+        print(f"  !! Seleniumで検索ページを取得できませんでした（キーワード: {keyword}）。")
+        return []
+
+    # ここから先は「成功した driver」で従来どおりの記事一覧を取る処理
+    try:
+        # 記事リンク a[data-cl-params*='_cl_link:title'] が出るまで待つ
+        try:
+            WebDriverWait(driver, 20).until(
+                EC.visibility_of_element_located(
+                    (By.CSS_SELECTOR, "a[data-cl-params*='_cl_link:title']")
                 )
             )
-            driver.execute_script(
-                "arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});",
-                more_button
-            )
-            time.sleep(1)
-            driver.execute_script("arguments[0].click();", more_button)
-            print(f"  - 「もっと見る」ボタン押下 ({i+1}/{MAX_LOAD_COUNT})")
-            time.sleep(3)
         except:
-            break
+            # 見つからなくても一応ページソースは見る
+            pass
+        time.sleep(3)
 
-    soup = BeautifulSoup(driver.page_source, "html.parser")
-    driver.quit()
+        # 「もっと見る」ボタンをクリック
+        MAX_LOAD_COUNT = 3
+        for i in range(MAX_LOAD_COUNT):
+            try:
+                more_button = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located(
+                        (By.XPATH, "//button[span[contains(text(), 'もっと見る')]]")
+                    )
+                )
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});",
+                    more_button
+                )
+                time.sleep(1)
+                driver.execute_script("arguments[0].click();", more_button)
+                print(f"  - 「もっと見る」ボタン押下 ({i+1}/{MAX_LOAD_COUNT})")
+                time.sleep(3)
+            except:
+                break
 
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+
+    finally:
+        # 成功・失敗にかかわらず最後は必ずクローズ
+        if driver:
+            driver.quit()
+
+    # 以下の記事抽出ロジック（元のコードと同じ）
     data = []
     today = jst_now()
 
-    # 記事リンクを a[data-cl-params*='_cl_link:title'] で取得
     for a_tag in soup.select("a[data-cl-params*='_cl_link:title']"):
         try:
             link = a_tag.get("href") or ""
