@@ -1143,9 +1143,17 @@ def analyze_with_gemini_and_update_sheet(gc: gspread.Client):
 
         body = str(row[4])
 
-        # すでに G〜K が埋まっていればスキップ（従来どおり）
-        if all(str(v).strip() for v in row[6:11]):
-            continue 
+        # すでに G〜K が「有効な値」で埋まっていればスキップ
+        # ただし、G〜I のいずれかが N/A で始まる場合は再分析対象とする
+        g_to_k = [str(v).strip() for v in row[6:11]]  # G〜K列（インデックス6〜10）
+        g_to_i = g_to_k[0:3]  # G, H, I列のみ（company_info, category, sentiment）
+
+        is_all_filled = all(g_to_k)  # G〜Kがすべて非空か？
+        contains_na_g_to_i = any(v.upper().startswith("N/A") for v in g_to_i)
+
+        # G〜Kが全部埋まっていて、かつ G〜Iに N/A がなければ「分析済み」とみなしてスキップ
+        if is_all_filled and not contains_na_g_to_i:
+            continue
 
         # 本文が無い / 取得不可なら N/A を入れてスキップ（従来どおり）
         if not body.strip() or body == "本文取得不可":
